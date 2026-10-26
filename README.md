@@ -1,4 +1,4 @@
-# Agora — HZT4U Review Arena
+# Agora — HZT4U Review Arena  (v1.2.1 — Study Room, Gates, Golden tier, ultimate honour)
 
 A classroom review game for HZT4U (Philosophy: Questions & Theories). Four games, four units, 700 questions written
 only from the course slide decks. Works in any browser, installs as an app on phones/tablets/laptops, and runs offline
@@ -54,19 +54,33 @@ After install it launches full-screen, keeps working without Wi-Fi, and updates 
 | **Who Wants to Be a Philosopher King?** | 15 rungs to 1,000,000; 50:50, Ask the Class, Swap; safe havens at 5 and 10; walk away | Teams alternate on their own ladders |
 | **Lightning Round** | 90 s (timed) or 20 questions; streak multiplier | Question shows without options; first to buzz answers, −100 if wrong, others may buzz |
 
+### Study Room
+Every lesson's slide deck lives in the app (📖 icon, or the Study Room card on the home screen), card by card. Reading a lesson
+to the end at a reading pace marks it *studied*; a whole unit earns its **Scholar's Lamp**, all units the **Librarian**
+accolade. "Practise this lesson" at the end of a deck launches a Lightning Round drawn only from that lesson. Lesson text is
+in `lessons.js` — regenerate it from updated decks rather than editing by hand.
+
+### Gates and the Golden tier
+Each unit has three visible **gates** (Sentinel · Ironclad · Cartographer). Opening all three reveals that unit's hidden
+Golden tier — **Golden Checkmark**, **Golden Notebook**, **Golden Test Review** — which require very high accuracy at
+Level 4, three full cycles of the pool, exam-condition timed runs, and an hour of *active* play per lesson (time counts only
+while a question is on screen, capped at 90 s per answer). Earning every Golden honour in every unit unlocks **Valedictorian**.
+Each Golden unlock shows a **seal code** (derived from the player's name, unit, honour and date) so you can verify it on
+their device or in their exported data. The thresholds live in `GATE_DEFS` and `GOLD_DEFS` in `core.js`.
+
 ### Badges & accolades
 - **Badges** are per unit and carry that unit's colour and emblem (Column · Lantern · Constellation · Scales):
   Initiate, Scholar (70%+), Sage (70%+ at Level 4), Grand Master (all four games), Completionist (seen every question),
   Swift Mind (10 fast correct answers in a timed game).
 - **Accolades** are cross-unit achievements (First Steps, Flawless, Hot Streak, Philosopher King, Wheel Wizard,
-  Double Down, Lightning Rod, Exam Ready, Purist, Speed Demon, Polymath, Marathon, Rivalry, Full Cycle, Laureate).
+  Double Down, Lightning Rod, Exam Ready, Purist, Speed Demon, Polymath, Marathon, Rivalry, Full Cycle, Librarian) — and the ultimate honour, **"I think, therefore I am… a Philosopher"**, which requires every accolade, every badge in every unit, every Golden honour and Valedictorian, and shows a laurel-wreath seal card atop the badges page.
 - The **Leaderboard** (trophy icon) records top scores with names, filterable by game and unit.
 - Profiles, scores and progress live in the browser on each device. Use **Profile → Export data** to back up or move
   a class tablet's data; **Import** restores it.
 
 ## Editing the questions
 
-Questions live in `data/unit1.js` … `data/unit4.js` and `data/remedial.js`. Each entry:
+Questions live in `unit1.js` … `unit4.js` and `remedial.js`. Each entry:
 
 ```js
 {u:1, l:6, t:"Arguments", d:3, q:"Question text…", a:"Correct answer", x:["Wrong 1","Wrong 2","Wrong 3"]}
@@ -80,12 +94,12 @@ After editing, bump `VERSION` in `sw.js` (e.g. `agora-v1.0.1`) so installed copi
 
 ## Files
 ```
-index.html            app shell
-css/style.css         theme (unit colours are CSS variables at the top)
-js/core.js            question pool engine, profiles, scoring, badges
-js/games.js           the four games + results screen
-js/app.js             screens: home, setup, game select, leaderboard, badges
-data/*.js             question bank
-manifest.webmanifest  install metadata · sw.js  offline cache · icons/  app icons
+index.html, style.css, *.js, icons — all in ONE folder (no subfolders needed)
+style.css                theme (unit colours are CSS variables at the top)
+core.js               question pool engine, profiles, scoring, badges
+games.js              the four games + results screen
+app.js                screens: home, setup, game select, leaderboard, badges
+unit*.js, remedial.js          question bank
+manifest.webmanifest  install metadata · sw.js  offline cache · icon*.png/svg  app icons
 netlify.toml          headers for Netlify
 ```
