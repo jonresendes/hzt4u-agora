@@ -4,7 +4,7 @@
 'use strict';
 
 const App = {
-  s: Object.assign({units:[1],diff:"mix",topics:TOPICS.slice(),timed:false,timeSec:20,mode:"solo",teams:["Athens","Sparta"],projector:false},LS.get("settings",{})),
+  s: Object.assign({units:[1],diff:"mix",topics:TOPICS.slice(),timed:false,timeSec:20,mode:"solo",teams:["Athens","Sparta"],projector:false,orient:"auto"},LS.get("settings",{})),
   root: null, deferredInstall:null,
 
   init(){
@@ -12,6 +12,7 @@ const App = {
     $("#btnHome").onclick=()=>this.go("home");
     $("#btnLeaderboard").onclick=()=>this.go("leaderboard");
     $("#btnBadges").onclick=()=>this.go("badges");
+    $("#btnStudy").onclick=()=>this.go("study");
     $("#btnProfile").onclick=()=>this.profileModal();
     $("#btnInstall").onclick=()=>this.install();
     window.addEventListener("beforeinstallprompt",e=>{ e.preventDefault(); this.deferredInstall=e; $("#btnInstall").hidden=false; });
@@ -29,11 +30,13 @@ const App = {
   go(screen){
     document.body.classList.toggle("projector",!!(this.s.projector&&this.s.mode==="h2h")&&screen!=="home");
     window.scrollTo(0,0);
+    this.stopStudyClock();
     if(screen==="home") this.home();
     else if(screen==="setup") this.setup();
     else if(screen==="games") this.games();
     else if(screen==="leaderboard") this.leaderboard();
     else if(screen==="badges") this.badges();
+    else if(screen==="study") this.study();
   },
 
   /* ── HOME ── */
@@ -47,8 +50,10 @@ const App = {
       <p class="mantra" style="margin-top:1rem">“Be Curious First, Not Critical.”</p>
     </section>
     <div class="grid grid-2">${[1,2,3,4,0].map(u=>`<div class="u${u}"><button class="card card-btn unit-card" data-u="${u}"><div class="n">${u||"∞"}</div><div><h3>${esc(UNITS[u].title)}</h3><div class="lessons">${u?UNITS[u].lessons.length+" lessons · ":""}${u?unitTotal(u):BANK.length} questions · ${esc(UNITS[u].tag)}</div></div>${emblem(u)}</button></div>`).join("")}</div>
+    <button class="card card-btn study-card" id="homeStudy"><span class="gicon"><svg><use href="#ic-book"/></svg></span><div><h3>Study Room</h3><div class="lessons">Read every lesson, card by card, then practise it — ${(window.LESSONS||[]).length} lessons · ${p?Object.keys(p.study||{}).length:0} studied</div></div></button>
     <div class="stats-strip"><div><b>${BANK.length}</b>questions</div><div><b>${games}</b>games played${p?" by "+esc(p.name):""}</div><div><b>${ans}</b>answered</div><div><b>${p?Object.keys(p.badges).length:0}</b>badges</div></div>`;
     $$(".unit-card",this.root).forEach(b=>b.onclick=()=>{ this.s.units=[+b.dataset.u]; this.save(); this.go("setup"); });
+    $("#homeStudy",this.root).onclick=()=>this.go("study");
   },
 
   /* ── SETUP ── */
@@ -74,6 +79,9 @@ const App = {
         <div class="card"><div class="row between" style="margin-bottom:.6rem"><div class="eyebrow">Topics</div><div class="row"><button class="btn sm ghost" id="tAll">All</button><button class="btn sm ghost" id="tNone">None</button></div></div>
           <div class="option-list" id="topics">${TOPICS.map(t=>`<button class="opt ${s.topics.includes(t)?"on":""}" data-t="${t}" ${counts[t]?"":"disabled"}><b>${t}</b><span>${TOPIC_DESC[t]}</span><span class="cnt">${counts[t]} questions</span></button>`).join("")}</div>
         </div>
+        <div class="card"><div class="row between"><div><div class="eyebrow" style="margin-bottom:.4rem">Display</div><div class="seg" id="orientSeg"><button data-o="auto" class="${s.orient==="auto"?"on":""}">Auto</button><button data-o="portrait" class="${s.orient==="portrait"?"on":""}">Portrait</button><button data-o="landscape" class="${s.orient==="landscape"?"on":""}">Landscape</button></div></div><button class="btn sm" id="fsBtn"><svg class="ic"><use href="#ic-fullscreen"/></svg> Fullscreen</button></div>
+          <p class="small muted" style="margin-top:.6rem">Phones and tablets only honour an orientation lock in fullscreen or when Agora is installed as an app — tap Fullscreen (or the ⛶ button during a game) and the lock applies.</p>
+        </div>
         <div class="card"><div class="row between"><label class="toggle ${s.timed?"on":""}" id="timerToggle"><span class="sw"></span><span><b>Timed questions</b><div class="small muted">Faster answers earn bonus points</div></span></label>
           <div class="seg" id="secs" ${s.timed?"":"hidden"}>${[10,15,20,30,45].map(v=>`<button data-s="${v}" class="${s.timeSec===v?"on":""}">${v}s</button>`).join("")}</div></div>
         </div>
@@ -90,6 +98,7 @@ const App = {
         </div>
         <div class="divider"></div>
         <button class="btn primary lg block" id="toGames" ${size&&s.topics.length?"":"disabled"}>Choose a game →</button>
+        ${u?`<button class="btn block" id="toStudy" style="margin-top:.5rem"><svg class="ic"><use href="#ic-book"/></svg> Study this unit's lessons</button>`:""}
         <button class="btn sm ghost block" id="resetPool" style="margin-top:.5rem">Reset “seen” questions for this pool</button>
       </div></div>
     </div>`;
@@ -105,8 +114,11 @@ const App = {
     $("#tAll",r).onclick=()=>{ s.topics=TOPICS.filter(t=>counts[t]); this.save(); this.setup(); };
     $("#tNone",r).onclick=()=>{ s.topics=[]; this.save(); this.setup(); };
     $("#timerToggle",r).onclick=()=>{ s.timed=!s.timed; this.save(); this.setup(); };
+    $$("#orientSeg button",r).forEach(b=>b.onclick=()=>{ s.orient=b.dataset.o; this.save(); this.applyOrientation(true); this.setup(); });
+    $("#fsBtn",r).onclick=()=>this.toggleFullscreen();
     $$("#secs button",r).forEach(b=>b.onclick=()=>{ s.timeSec=+b.dataset.s; this.save(); this.setup(); });
     $("#toGames",r).onclick=()=>this.go("games");
+    if($("#toStudy",r)) $("#toStudy",r).onclick=()=>this.study(u);
     $("#resetPool",r).onclick=()=>{ Pool.reset(this.cfg()); toast("Pool reset","All questions in this selection are fresh again"); this.setup(); };
   },
 
@@ -115,9 +127,9 @@ const App = {
     const s=this.s; const u=this.unitNo(); setUnitTheme(u); const cfg=this.cfg();
     const wheelCount=Pool.base(cfg).filter(wheelEligible).length;
     this.root.innerHTML=`<div class="screen-head"><div><button class="back" id="back"><svg class="ic"><use href="#ic-back"/></svg> Settings</button><div class="eyebrow">${esc(UNITS[u].short)} · ${diffName(s.diff)} · ${s.mode==="h2h"?s.teams.length+" teams":"solo"}${s.timed?" · timed":""}</div><h2>Choose your arena</h2></div>${emblem(u)}</div>
-    <div class="grid grid-2">${Object.values(GAMES).map(g=>`<button class="card card-btn game-card" data-g="${g.id}"><div class="row between"><div class="glyph">${g.glyph}</div><button class="btn sm ghost how" data-g="${g.id}">How to play</button></div><h3>${esc(g.name)}</h3><p>${esc(g.desc)}</p><div class="meta">${esc(g.meta)}${g.id==="wheel"?` · ${wheelCount} puzzle-ready terms`:""}</div></button>`).join("")}</div>`;
+    <div class="grid grid-2">${Object.values(GAMES).map(g=>`<div class="card card-btn game-card" role="button" tabindex="0" data-g="${g.id}"><div class="game-head"><span class="gicon"><svg><use href="#g-${g.id}"/></svg></span><h3>${esc(g.name)}</h3><button class="btn sm ghost how" data-g="${g.id}" aria-label="How to play">?</button></div><p>${esc(g.desc)}</p><div class="meta">${esc(g.meta)}${g.id==="wheel"?` · ${wheelCount} puzzle-ready terms`:""}</div></div>`).join("")}</div>`;
     $("#back",this.root).onclick=()=>this.go("setup");
-    $$(".game-card",this.root).forEach(c=>c.onclick=(e)=>{ if(e.target.closest(".how")) return; this.startGame(c.dataset.g); });
+    $$(".game-card",this.root).forEach(c=>{ c.onclick=(e)=>{ if(e.target.closest(".how")) return; this.startGame(c.dataset.g); }; c.onkeydown=(e)=>{ if(e.key==="Enter"||e.key===" "){e.preventDefault(); this.startGame(c.dataset.g);} }; });
     $$(".how",this.root).forEach(b=>b.onclick=(e)=>{ e.stopPropagation(); this.howTo(b.dataset.g); });
   },
   howTo(g){
@@ -131,10 +143,11 @@ const App = {
     $("#mGo",b).onclick=()=>{ closeModal(); this.startGame(g); }; $("#mClose",b).onclick=closeModal;
   },
 
-  startGame(g){
-    const cfg=this.cfg(); cfg.game=g; const u=this.unitNo(); setUnitTheme(u);
+  startGame(g,lesson){
+    const cfg=this.cfg(); cfg.game=g; if(lesson!=null) cfg.lesson=lesson; const u=this.unitNo(); setUnitTheme(u);
     document.body.classList.toggle("projector",!!(this.s.projector&&this.s.mode==="h2h"));
     if(!Pool.sizeFor(cfg)&&!Pool.base(cfg).length){ toast("No questions match","Pick at least one topic"); return; }
+    this.applyOrientation(false);
     const session=new Session(cfg); window.scrollTo(0,0);
     ({jeopardy:playJeopardy,wheel:playWheel,millionaire:playMillionaire,sprint:playSprint})[g](session,this.root);
   },
@@ -162,11 +175,80 @@ const App = {
     const s=p.stats;
     this.root.innerHTML=`<div class="screen-head"><div><button class="back" id="back"><svg class="ic"><use href="#ic-back"/></svg> Home</button><div class="eyebrow">${esc(p.name)}</div><h2>Badges & Accolades</h2></div>
       <div class="stats-strip" style="margin:0"><div><b>${s.games}</b>games</div><div><b>${s.answered}</b>answered</div><div><b>${pctStr(s.correct,s.answered)}</b>accuracy</div><div><b>${s.bestStreak}</b>best streak</div></div></div>
+    ${p.accolades.laureate?`<div class="cogito"><div class="laurel" aria-hidden="true"><svg viewBox="0 0 64 64"><use href="#ic-laurel"/></svg></div><div class="eyebrow" style="color:#f6e7bf">The ultimate honour</div><h2 class="cogito-title">I think, therefore I am… <em>a Philosopher</em></h2><p class="muted">Every accolade. Every badge. Every Golden honour. Valedictorian. ${esc(p.name)} has finished the Agora.</p><div class="seal" style="margin-top:.6rem">Seal ${esc(p.accolades.laureate.seal||"")} · ${esc(p.accolades.laureate.date||"")}</div></div>`:""}
+    <div class="jumpbar"><a href="#secBadges">Badges</a><a href="#secGates">Gates & Golden</a><a href="#secStudy">Study Room</a><a href="#secAcc">Accolades</a></div>
+    <div id="secBadges"></div>
     ${[1,2,3,4].map(u=>`<div class="u${u} card" style="margin-bottom:1rem"><div class="row between" style="margin-bottom:.8rem"><div><div class="eyebrow">Unit ${u} · ${esc(UNITS[u].badgeName)} badges</div><h3>${esc(UNITS[u].title)}</h3></div>${emblem(u)}</div>
       <div class="badge-grid">${BADGE_DEFS.map(b=>{ const got=p.badges[u+":"+b.id]; const pr=b.prog?b.prog(p,u):null; return `<div class="badge ${got?"":"locked"}"><div class="medal"><svg><use href="#em-${u}"/></svg></div><b>${esc(b.name)}</b><span>${esc(b.desc)}</span>${got?`<span class="pill">Earned ${got}</span>`:(pr?`<div class="prog"><i style="width:${Math.min(100,100*pr[0]/pr[1])}%"></i></div><span>${pr[0]}/${pr[1]}</span>`:"")}</div>`; }).join("")}</div></div>`).join("")}
-    <div class="card"><div class="eyebrow" style="margin-bottom:.8rem">Accolades · ${Object.keys(p.accolades).length}/${ACCOLADE_DEFS.length}</div><div class="grid grid-3">${ACCOLADE_DEFS.map(a=>`<div class="acc ${p.accolades[a.id]?"":"locked"}"><div class="star">${p.accolades[a.id]?"★":"☆"}</div><div><b>${esc(a.name)}</b><span>${esc(a.desc)}${p.accolades[a.id]?" · "+p.accolades[a.id]:""}</span></div></div>`).join("")}</div></div>`;
+    <div id="secGates"></div>
+    ${[1,2,3,4].map(u=>{ const open=gatesOpen(p,u); return `<div class="u${u} card" style="margin-bottom:1rem"><div class="row between" style="margin-bottom:.6rem"><div><div class="eyebrow">Unit ${u} · Gates</div><h3>${esc(UNITS[u].short)}</h3></div>${emblem(u)}</div>
+      <div class="grid grid-3">${GATE_DEFS.map(g=>{ const got=p.accolades["gate:"+u+":"+g.id]; const pr=g.prog?g.prog(p,u):null; return `<div class="acc ${got?"":"locked"}"><div class="star">${got?"◆":"◇"}</div><div style="flex:1"><b>${esc(g.name)}</b><span>${esc(g.desc)}${got?" · "+got:""}</span>${!got&&pr?`<div class="prog" style="margin-top:.35rem;height:.25rem;border-radius:99px;background:var(--ink-4);overflow:hidden"><i style="display:block;height:100%;width:${Math.min(100,100*pr[0]/pr[1])}%;background:var(--accent)"></i></div>`:""}</div></div>`; }).join("")}</div>
+      ${open?`<div class="gold-tier"><div class="eyebrow gold-eb">✦ Golden tier unlocked</div><div class="grid grid-3">${GOLD_DEFS.map(g=>{ const got=goldEarned(p,u,g.id); const pr=g.prog(p,u); return `<div class="acc gold ${got?"":"locked"}"><div class="star">✦</div><div style="flex:1"><b>${esc(g.name)}</b><span>${esc(g.desc)}</span>${got?`<div class="seal">Seal ${esc(got.seal)} · ${esc(got.date)}</div>`:`<div class="small muted" style="margin-top:.3rem">${pr[0]}/${pr[1]} requirements met · ${Math.floor(BU(p,u).time/3600)}h ${Math.floor(BU(p,u).time%3600/60)}m of ${UNITS[u].lessons.length}h played</div>`}</div></div>`; }).join("")}</div></div>`:`<p class="small muted" style="margin-top:.6rem">Open all three gates and the Agora may reveal more.</p>`}</div>`; }).join("")}
+    ${p.accolades.valedictorian?`<div class="card gold-tier" style="margin-bottom:1rem"><div class="eyebrow gold-eb">✦ Valedictorian</div><p>Every Golden honour in every unit. Seal <b>${esc(p.accolades.valedictorian.seal)}</b> · ${esc(p.accolades.valedictorian.date)}</p></div>`:""}
+    <div id="secStudy"></div><div class="card" style="margin-bottom:1rem"><div class="eyebrow" style="margin-bottom:.8rem">Study Room</div><div class="grid grid-2">${[1,2,3,4].map(u=>{ const ls=(window.LESSONS||[]).filter(L=>L.u===u); return `<div class="u${u}" style="--accent:${unitColor(u)}"><b>${esc(UNITS[u].short)}</b> ${p.accolades["lamp:"+u]?`<span class="pill">✦ Scholar's Lamp</span>`:""}<div class="row" style="margin-top:.4rem;gap:.3rem">${ls.map(L=>`<span class="lchip ${studyDone(p,u,L.l)?"on":""}" title="${esc(L.title)}">${esc(String(L.l))}</span>`).join("")}</div></div>`; }).join("")}</div></div>
+    <div id="secAcc"></div><div class="card"><div class="eyebrow" style="margin-bottom:.8rem">Accolades · ${ACCOLADE_DEFS.filter(a=>p.accolades[a.id]).length}/${ACCOLADE_DEFS.length}</div><div class="grid grid-3">${ACCOLADE_DEFS.map(a=>{ const got=p.accolades[a.id]; const date=got&&(typeof got==="string"?got:got.date); return `<div class="acc ${got?"":"locked"} ${a.ultimate?"ultimate":""}"><div class="star">${a.ultimate?"✦":got?"★":"☆"}</div><div><b>${esc(a.name)}</b><span>${esc(a.desc)}${date?" · "+esc(date):""}</span></div></div>`; }).join("")}</div></div>`;
     $("#back",this.root).onclick=()=>this.go("home");
   },
+
+
+  /* ── STUDY ROOM ── */
+  study(u){
+    const p=Profile.current(); const LS_=window.LESSONS||[];
+    if(u==null){ setUnitTheme(0);
+      this.root.innerHTML=`<div class="screen-head"><div><button class="back" id="back"><svg class="ic"><use href="#ic-back"/></svg> Home</button><div class="eyebrow">Study Room</div><h2>Choose a unit to study</h2></div></div>
+      <div class="grid grid-2">${[1,2,3,4].map(un=>{ const ls=LS_.filter(L=>L.u===un); const done=p?ls.filter(L=>studyDone(p,un,L.l)).length:0; return `<div class="u${un}"><button class="card card-btn unit-card" data-u="${un}"><div class="n">${un}</div><div><h3>${esc(UNITS[un].title)}</h3><div class="lessons">${ls.length} lessons · ${done} studied${p&&p.accolades["lamp:"+un]?" · ✦ Scholar's Lamp":""}</div><div class="prog" style="margin-top:.5rem;height:.3rem;border-radius:99px;background:var(--ink-4);overflow:hidden"><i style="display:block;height:100%;width:${ls.length?100*done/ls.length:0}%;background:var(--accent)"></i></div></div>${emblem(un)}</button></div>`; }).join("")}</div>
+      <p class="muted small" style="margin-top:1rem">Each lesson is the slide deck, card by card. Read a lesson to the end (at a reading pace) to mark it studied; finish a whole unit for its Scholar's Lamp, and every unit for the Librarian accolade.</p>`;
+      $("#back",this.root).onclick=()=>this.go("home");
+      $$(".unit-card",this.root).forEach(b=>b.onclick=()=>this.study(+b.dataset.u));
+      return;
+    }
+    setUnitTheme(u); const ls=LS_.filter(L=>L.u===u);
+    this.root.innerHTML=`<div class="screen-head"><div><button class="back" id="back"><svg class="ic"><use href="#ic-back"/></svg> Study Room</button><div class="eyebrow">Unit ${u} · Study Room</div><h2>${esc(UNITS[u].title)}</h2></div>${emblem(u)}</div>
+    <div class="stack">${ls.map(L=>{ const done=p&&studyDone(p,u,L.l); const t=p?(p.studyTime||{})[lessonKey(u,L.l)]||0:0; const req=studyRequired(L); return `<button class="card card-btn lesson-row" data-l="${L.l}"><div class="ln">${esc(String(L.l))}</div><div style="flex:1;min-width:0"><h3>${esc(L.title)}</h3><div class="small muted">${esc(L.sub||"")}</div><div class="small muted" style="margin-top:.3rem">${L.cards.length} cards · ${done?"✓ studied "+done:Math.min(100,Math.round(100*t/req))+"% read"}</div></div><span class="pill ${done?"":"dim"}">${done?"Studied":"Open"}</span></button>`; }).join("")}</div>
+    <div class="row" style="margin-top:1rem"><button class="btn primary" id="playUnit">Play this unit</button></div>`;
+    $("#back",this.root).onclick=()=>this.study();
+    $$(".lesson-row",this.root).forEach(b=>b.onclick=()=>this.reader(u,b.dataset.l));
+    $("#playUnit",this.root).onclick=()=>{ this.s.units=[u]; this.save(); this.go("setup"); };
+  },
+  reader(u,l){
+    const L=(window.LESSONS||[]).find(x=>x.u===u&&String(x.l)===String(l)); if(!L) return this.study(u);
+    setUnitTheme(u); let i=LS.get("study.pos."+lessonKey(u,l),0); i=Math.min(Math.max(0,i),L.cards.length-1);
+    const p=Profile.current(); const req=studyRequired(L);
+    const kindLabel={notes:"Notes",discuss:"Discussion",activity:"Activity",watch:"Watch & jot"};
+    const paint=()=>{
+      const c=L.cards[i]; const t=p?(p.studyTime||{})[lessonKey(u,l)]||0:0;
+      this.root.innerHTML=`<div class="game-top"><button class="back" id="back"><svg class="ic"><use href="#ic-back"/></svg><span>Lessons</span></button><div class="gt-title"><div class="eyebrow">${esc(UNITS[u].short)} · Lesson ${esc(String(l))}</div><h2>${esc(L.title)}</h2></div><div class="gt-right"><span class="pill dim" id="rdProg">${i+1}/${L.cards.length}</span><button class="icon-btn sm" id="gFull" title="Fullscreen"><svg class="ic"><use href="#ic-fullscreen"/></svg></button></div></div>
+      <div class="readbar"><i style="width:${100*(i+1)/L.cards.length}%"></i></div>
+      <div class="qpanel study-card-view">
+        <div class="meta"><span class="pill ${c.k==="notes"?"":"dim"}">${c.lbl?esc(c.lbl):kindLabel[c.k]||c.k}</span>${p&&studyDone(p,u,l)?`<span class="pill">✓ Studied</span>`:`<span class="pill dim" id="rdTime">${Math.min(100,Math.round(100*t/req))}% read</span>`}</div>
+        <h2 class="study-h">${esc(c.h)}</h2>
+        ${c.k==="discuss"?`<ol class="study-list">${c.b.map(x=>`<li>${esc(x)}</li>`).join("")}</ol>`:`<ul class="study-list">${c.b.map(x=>`<li>${esc(x)}</li>`).join("")}</ul>`}
+        ${c.c.map(co=>`<div class="callout"><div class="eyebrow">${esc(co.t)}</div>${co.b.map(x=>`<p>${esc(x)}</p>`).join("")}</div>`).join("")}
+      </div>
+      <div class="row between" style="margin-top:.8rem"><button class="btn" id="prev" ${i===0?"disabled":""}>← Previous</button><div class="row">${i===L.cards.length-1?`<button class="btn" id="practice">Practise this lesson</button>`:""}<button class="btn primary" id="next">${i===L.cards.length-1?"Finish lesson":"Next →"}</button></div></div>`;
+      $("#back",this.root).onclick=()=>this.study(u); $("#gFull",this.root).onclick=()=>this.toggleFullscreen();
+      $("#prev",this.root).onclick=()=>{ i=Math.max(0,i-1); LS.set("study.pos."+lessonKey(u,l),i); paint(); };
+      $("#next",this.root).onclick=()=>{ if(i<L.cards.length-1){ i++; LS.set("study.pos."+lessonKey(u,l),i); paint(); } else finish(); };
+      const pr=$("#practice",this.root); if(pr) pr.onclick=()=>{ this.flushStudy(true); this.s.units=[u]; this.s.mode="solo"; this.save(); this.startGame("sprint",L.l); };
+      this.root.onkeydown=null;
+    };
+    const finish=()=>{
+      this.flushStudy(true); const pp=Profile.current(); const done=pp&&studyDone(pp,u,l); const t=pp?(pp.studyTime||{})[lessonKey(u,l)]||0:0;
+      if(done){ LS.set("study.pos."+lessonKey(u,l),0); toast("Lesson complete","Nicely done — try the practice round","ic-book"); this.study(u); }
+      else { const need=Math.ceil((req-t)/60); toast("Read a little slower","About "+Math.max(1,need)+" more minute"+(need===1?"":"s")+" of reading marks this lesson studied","ic-book"); LS.set("study.pos."+lessonKey(u,l),0); this.study(u); }
+    };
+    // study clock: counts only while this reader is open and the tab is visible
+    this.stopStudyClock(); this._study={u,l,t0:performance.now(),acc:0};
+    this._studyH=setInterval(()=>{ if(document.hidden) { this._study.t0=performance.now(); return; } const now=performance.now(); this._study.acc+=(now-this._study.t0)/1000; this._study.t0=now; if(this._study.acc>=30) this.flushStudy(false); },1000);
+    const onKey=(e)=>{ if(!this._study) { document.removeEventListener("keydown",onKey); return; } if(e.key==="ArrowRight"||e.key===" "){ const n=$("#next",this.root); if(n){ e.preventDefault(); n.click(); } } if(e.key==="ArrowLeft"){ const b=$("#prev",this.root); if(b&&!b.disabled) b.click(); } };
+    document.addEventListener("keydown",onKey);
+    paint();
+  },
+  flushStudy(reachedEnd){
+    if(!this._study) return; const st=this._study; const now=performance.now(); st.acc+=(now-st.t0)/1000; st.t0=now;
+    const p=Profile.current(); if(p&&(st.acc>0||reachedEnd)){ const un=recordStudy(p,st.u,st.l,st.acc,!!reachedEnd); st.acc=0; un.forEach((x,i)=>setTimeout(()=>toast(x.type==="study"?"✓ "+x.def.name:"Accolade: "+x.def.name,x.def.desc,"ic-book"),200+i*600)); }
+  },
+  stopStudyClock(){ if(this._studyH){ this.flushStudy(false); clearInterval(this._studyH); this._studyH=null; } this._study=null; },
 
   /* ── PROFILES ── */
   profileModal(first){
@@ -190,6 +272,24 @@ const App = {
     $("#pFile",b).onchange=e=>{ const f=e.target.files[0]; if(!f) return; f.text().then(t=>{ try{ const d=JSON.parse(t); Object.keys(d).forEach(k=>LS.set(k,d[k])); toast("Data imported","Profiles, scores and progress restored"); refresh(); }catch(err){ toast("Import failed","That file isn't an Agora export"); } }); };
   },
 
+  async applyOrientation(fromUser){
+    const o=this.s.orient||"auto"; const so=screen.orientation;
+    if(!so) { if(fromUser&&o!=="auto") toast("Orientation lock unavailable","This browser doesn't support it — rotate the device manually","ic-rotate"); return; }
+    try{
+      if(o==="auto"){ if(so.unlock) so.unlock(); return; }
+      await so.lock(o==="portrait"?"portrait":"landscape");
+      if(fromUser) toast("Orientation locked",o==="portrait"?"Portrait":"Landscape","ic-rotate");
+    }catch(e){
+      if(fromUser){ const standalone=matchMedia("(display-mode: standalone)").matches; toast("Lock will apply in fullscreen",standalone?"Rotate the device to "+o:"Tap Fullscreen, or install Agora as an app","ic-rotate"); }
+    }
+  },
+  async toggleFullscreen(){
+    const d=document.documentElement;
+    try{
+      if(document.fullscreenElement){ await document.exitFullscreen(); }
+      else { await (d.requestFullscreen?d.requestFullscreen({navigationUI:"hide"}):d.webkitRequestFullscreen()); await this.applyOrientation(false); }
+    }catch(e){ toast("Fullscreen unavailable","On iPhone, use Share → Add to Home Screen for a full-screen app","ic-fullscreen"); }
+  },
   install(){ if(this.deferredInstall){ this.deferredInstall.prompt(); this.deferredInstall=null; $("#btnInstall").hidden=true; } }
 };
 

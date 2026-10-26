@@ -1,9 +1,9 @@
 /* Agora service worker — offline-first app shell */
-const VERSION = 'agora-v1.0.1-flat';
+const VERSION = 'agora-v1.2.1';
 const SHELL = [
   './', './index.html', './style.css',
   './core.js', './games.js', './app.js',
-  './unit1.js', './unit2.js', './unit3.js', './unit4.js', './remedial.js',
+  './unit1.js', './unit2.js', './unit3.js', './unit4.js', './remedial.js', './lessons.js',
   './manifest.webmanifest', './icon.svg', './icon-192.png', './icon-512.png'
 ];
 self.addEventListener('install', e => { e.waitUntil(caches.open(VERSION).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())); });

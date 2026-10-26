@@ -7,36 +7,57 @@
 class Session{
   constructor(cfg){
     this.cfg=cfg; // {units,diff,topics,timed,timeSec,mode,players:[{name,color}],game,projector}
-    this.players=cfg.players.map((p,i)=>({name:p.name,color:p.color||TEAM_COLORS[i],score:0,answered:0,correct:0,fast:0,streak:0,bestStreak:0,times:[]}));
-    this.turn=0; this.seen=[]; this._shown=new Set(); this.recycled=false; this.flags={}; this.log=[]; this.ended=false; this.timer=null;
+    this.players=cfg.players.map((p,i)=>({name:p.name,color:p.color||TEAM_COLORS[i],score:0,answered:0,correct:0,fast:0,streak:0,bestStreak:0,times:[],time:0,perUnit:{}}));
+    this.turn=0; this.seen=[]; this._shown=new Set(); this.recycled=false; this.cycle=false; this.flags={}; this.log=[]; this.ended=false; this.timer=null; this.turnT0=performance.now();
   }
   get cur(){ return this.players[this.turn]; }
   get h2h(){ return this.cfg.mode==="h2h"; }
   next(){ this.turn=(this.turn+1)%this.players.length; }
-  draw(n,opts){ const r=Pool.draw(this.cfg,n,opts); if(r.recycled) this.recycled=true; return r.qs; }
+  draw(n,opts){ const r=Pool.draw(this.cfg,n,opts); if(r.recycled) this.recycled=true; if(r.reset&&this.cfg.diff==="mix"&&this.cfg.topics.length===TOPICS.length&&this.cfg.lesson==null) this.cycle=true; return r.qs; }
+  /* credit active time (capped per action) to a player, attributed to a question's unit */
+  credit(player,secs,q){ const t=Math.min(90,Math.max(0,secs||0)); player.time+=t; if(q){ const pu=player.perUnit[q.u]=player.perUnit[q.u]||{time:0,a:0,c:0,l4a:0,l4c:0,lessons:{},topics:{}}; pu.time+=t; } }
+  tick(player,q){ const now=performance.now(); this.credit(player,(now-this.turnT0)/1000,q); this.turnT0=now; }
   present(q){ if(this._shown.has(q.id)) return; this._shown.add(q.id); this.seen.push(q.id); Pool.markUsed(this.cfg,[q.id]); }
   record(player,q,ok,secs,pts){
     player.answered++; if(ok){player.correct++; player.streak++; player.bestStreak=Math.max(player.bestStreak,player.streak); if(secs!=null&&secs<5) player.fast++;} else player.streak=0;
-    if(secs!=null) player.times.push(secs);
+    if(secs!=null){ player.times.push(secs); this.credit(player,secs,q); }
+    const pu=player.perUnit[q.u]=player.perUnit[q.u]||{time:0,a:0,c:0,l4a:0,l4c:0,lessons:{},topics:{}};
+    pu.a++; if(ok) pu.c++; if(q.d===4){ pu.l4a++; if(ok) pu.l4c++; }
+    const L=pu.lessons[q.l]=pu.lessons[q.l]||{a:0,c:0}; L.a++; if(ok) L.c++;
+    const T=pu.topics[q.t]=pu.topics[q.t]||{a:0,c:0}; T.a++; if(ok) T.c++;
     player.score+=pts||0;
     this.log.push({q,ok,who:player.name,pts:pts||0});
   }
   stopTimer(){ if(this.timer){this.timer.stop(); this.timer=null;} }
   scoreboardHTML(){
-    return `<div class="scoreboard">${this.players.map((p,i)=>`<div class="score ${i===this.turn&&this.h2h?'active':''}" data-i="${i}"><span class="nm"><i style="background:${p.color}"></i>${esc(p.name)}</span><span class="val">${fmt(p.score)}</span></div>`).join("")}</div>`;
+    return `<div class="scoreboard ${this.h2h?'h2h':''}">${this.players.map((p,i)=>`<div class="score ${i===this.turn&&this.h2h?'active':''}" data-i="${i}" style="--pc:${p.color}"><span class="nm"><i style="background:${p.color}"></i>${esc(p.name)}</span><span class="val">${fmt(p.score)}</span></div>`).join("")}</div>`;
   }
   refreshScores(root){ const sb=$(".scoreboard",root); if(sb) sb.outerHTML=this.scoreboardHTML(); }
   finish(){ if(this.ended) return; this.ended=true; this.stopTimer(); showResults(this); }
 }
 
-/* ── Game chrome: top bar with back, scoreboard, optional status ── */
+/* ── Game chrome: slim top bar with quit, title, compact scores, standings & fullscreen ── */
 function gameTop(session,title,extra){
+  const u=session.cfg.units.length>1?0:session.cfg.units[0];
   return `<div class="game-top">
-    <div class="row"><button class="back" id="gBack"><svg class="ic"><use href="#ic-back"/></svg> Quit</button><div><div class="eyebrow">${esc(GAMES[session.cfg.game].name)} · ${esc(unitShort(session.cfg.units.length>1?0:session.cfg.units[0]))} · ${esc(diffName(session.cfg.diff))}</div><h2 style="font-size:1.4rem">${title||""}</h2></div></div>
-    <div class="row">${extra||""}${session.scoreboardHTML()}</div>
+    <button class="back" id="gBack" title="Quit"><svg class="ic"><use href="#ic-back"/></svg><span>Quit</span></button>
+    <div class="gt-title"><div class="eyebrow">${esc(GAMES[session.cfg.game].name)} · ${esc(unitShort(u))} · ${esc(diffName(session.cfg.diff))}</div>${title?`<h2>${title}</h2>`:""}</div>
+    <div class="gt-right">${extra||""}${session.scoreboardHTML()}<button class="icon-btn sm" id="gStand" title="Standings"><svg class="ic"><use href="#ic-list"/></svg></button><button class="icon-btn sm" id="gFull" title="Fullscreen"><svg class="ic"><use href="#ic-fullscreen"/></svg></button></div>
   </div>`;
 }
-function bindQuit(root,session){ $("#gBack",root).onclick=()=>{ const b=modal(`<h3>Quit this game?</h3><p class="muted" style="margin:.5rem 0 1rem">Progress so far will be scored and saved.</p><div class="row"><button class="btn primary" id="mQuit">Quit & score</button><button class="btn ghost" id="mStay">Keep playing</button></div>`); $("#mQuit",b).onclick=()=>{closeModal(); session.finish();}; $("#mStay",b).onclick=closeModal; }; }
+function bindQuit(root,session){
+  const q=$("#gBack",root); if(q) q.onclick=()=>{ const b=modal(`<h3>Quit this game?</h3><p class="muted" style="margin:.5rem 0 1rem">Progress so far will be scored and saved.</p><div class="row"><button class="btn primary" id="mQuit">Quit & score</button><button class="btn ghost" id="mStay">Keep playing</button></div>`); $("#mQuit",b).onclick=()=>{closeModal(); session.finish();}; $("#mStay",b).onclick=closeModal; };
+  const st=$("#gStand",root); if(st) st.onclick=()=>showStandings(session);
+  const fs=$("#gFull",root); if(fs) fs.onclick=()=>App.toggleFullscreen();
+}
+function showStandings(session){
+  const ranked=session.players.slice().sort((a,b)=>b.score-a.score);
+  const extra=p=>session.cfg.game==="millionaire"&&p.rung!=null?`rung ${Math.min(p.rung+1,15)}/15`:session.cfg.game==="wheel"&&p.round!=null?`round bank ${fmt(p.round)}`:`streak ×${p.streak}`;
+  const b=modal(`<div class="eyebrow">Standings</div><h3 style="margin:.3rem 0 .8rem">${esc(GAMES[session.cfg.game].name)}</h3>
+    <table class="lb"><thead><tr><th>#</th><th>Player</th><th>Score</th><th>Correct</th><th></th></tr></thead><tbody>${ranked.map((p,i)=>`<tr><td>${i+1}</td><td><span style="display:inline-block;width:.6rem;height:.6rem;border-radius:50%;background:${p.color};margin-right:.4rem"></span><b>${esc(p.name)}</b>${session.h2h&&p===session.cur?' <span class="pill">turn</span>':""}</td><td class="sc">${fmt(p.score)}</td><td>${p.correct}/${p.answered}</td><td class="small muted">${extra(p)}</td></tr>`).join("")}</tbody></table>
+    <div class="row" style="margin-top:1rem;justify-content:flex-end"><button class="btn ghost" id="sClose">Close</button></div>`);
+  $("#sClose",b).onclick=closeModal;
+}
 
 /* ── Timer widget ── */
 function timerHTML(){ return `<div class="timer" id="qTimer"><svg class="ic"><use href="#ic-timer"/></svg><div class="bar"><i style="width:100%"></i></div><span class="t">--</span></div>`; }
@@ -117,7 +138,7 @@ async function playJeopardy(session,root){
   while(placed<ddCount&&guard++<50){ const c=rnd(board.length), r=1+rnd(4); const tile=board[c][r]; if(tile.q&&!tile.dd&&!tile.used){tile.dd=true;placed++;} }
 
   const render=()=>{
-    root.innerHTML=gameTop(session,"The Board",`<button class="btn sm ghost" id="jEnd">End game</button>`)+
+    root.innerHTML=gameTop(session,"The Board",`<button class="btn sm ghost" id="jEnd">End</button>`)+
       `<div class="jboard" style="--cols:${board.length}">${board.map(c=>`<div class="jcat">${esc(cats[board.indexOf(c)].label)}</div>`).join("")}
        ${[0,1,2,3,4].map(r=>board.map((c,ci)=>`<button class="jtile ${c[r].used?'used':''}" data-c="${ci}" data-r="${r}" ${c[r].used?'disabled':''}>${c[r].used?'':fmt(c[r].value)}</button>`).join("")).join("")}</div>
        ${session.h2h?`<p class="muted small" style="margin-top:.8rem">Control: <b style="color:${session.cur.color}">${esc(session.cur.name)}</b> — choose a clue. Wrong answers cost the value; other teams may steal once.</p>`:`<p class="muted small" style="margin-top:.8rem">Pick a clue. Wrong answers cost the value — Daily Doubles let you wager.</p>`}`;
@@ -197,7 +218,7 @@ async function playWheel(session,root){
         <div class="wheel-box card"><div class="pointer"></div><div class="wheel" id="wheel" style="transform:rotate(${rotation}deg)">${wheelSVG()}</div>
           <div class="row" style="justify-content:center">
             <button class="btn primary" id="spin" ${state.phase!=="spin"&&state.phase!=="free"?'disabled':''}>Spin</button>
-            <button class="btn" id="buyV" ${(state.phase!=="free"||p.round<VOWEL_COST||!VOWELS.split("").some(v=>!letters.has(v)))?'disabled':''}>Buy vowel · ${VOWEL_COST}</button>
+            <button class="btn" id="buyV" ${(state.phase!=="free"||p.round<VOWEL_COST||!VOWELS.split("").some(v=>!letters.has(v)))?'disabled':''}>Vowel · ${VOWEL_COST}</button>
             <button class="btn" id="solve" ${state.phase==="consonant"||state.phase==="vowel"?'disabled':''}>Solve</button>
           </div>
           <div class="small muted">Round bank: <b style="color:${p.color}">${esc(p.name)}</b> ${fmt(p.round)}</div>
@@ -216,7 +237,7 @@ async function playWheel(session,root){
       $("#solve",root).onclick=doSolve;
       $$(".key",root).forEach(k=>k.onclick=()=>guess(k.dataset.l));
     };
-    const nextPlayer=(msg)=>{ if(session.h2h) session.next(); state.phase="spin"; draw(msg); };
+    const nextPlayer=(msg)=>{ session.tick(session.cur,q); if(session.h2h) session.next(); state.phase="spin"; draw(msg); };
     const doSpin=()=>new Promise(res=>{
       const idx=rnd(WHEEL_SEGS.length); const segDeg=360/WHEEL_SEGS.length;
       // pointer at top (−90°). Wheel rotates clockwise; segment i spans [i*seg, (i+1)*seg] from top before rotation.
@@ -250,7 +271,7 @@ async function playWheel(session,root){
     };
     let resolveRound; const roundDone=new Promise(r=>resolveRound=r);
     const finishRound=async(p,ok,auto)=>{
-      solved=true; Sfx.win();
+      solved=true; Sfx.win(); session.tick(p,q);
       const bonus=300; const gained=p.round+bonus;
       session.players.forEach(x=>{ x.answered++; if(x===p){x.correct++; x.streak++; x.bestStreak=Math.max(x.bestStreak,x.streak);} else x.streak=0; });
       p.score+=gained; session.log.push({q,ok:true,who:p.name,pts:gained});
@@ -262,6 +283,7 @@ async function playWheel(session,root){
       $("#nextR",root).onclick=()=>resolveRound();
       if(session.h2h) session.next();
     };
+    session.turnT0=performance.now();
     draw(session.h2h?`<span style="color:${session.cur.color}">${esc(session.cur.name)}</span>, spin to start.`:"Spin to start.");
     await roundDone;
   }
@@ -283,7 +305,7 @@ async function playMillionaire(session,root){
     const p=session.cur; const level=prog[p.rung]; let q=nextQ(level); if(!q){ p.alive=false; continue; }
     let choices=buildChoices(q), allowed=null, swapped=false, audHTML="";
     const stage=el(`<div></div>`);
-    const paint=()=>{ root.innerHTML=gameTop(session,`For ${fmt(LADDER[p.rung])}`)+`<div class="mil"><div id="qwrap"></div><div class="stack">${audHTML}${ladderHTML(p)}<div class="lifelines"><button class="ll" id="ll50" ${p.ll.fifty?'':'disabled'}>50:50</button><button class="ll" id="llAud" ${p.ll.audience?'':'disabled'}>Ask the class</button><button class="ll" id="llSwap" ${p.ll.swap?'':'disabled'}>Swap</button></div><button class="btn sm ghost" id="walk">Walk away with ${fmt(p.rung?LADDER[p.rung-1]:0)}</button></div></div>`; $("#qwrap",root).appendChild(stage); bindQuit(root,session); };
+    const paint=()=>{ root.innerHTML=gameTop(session,`For ${fmt(LADDER[p.rung])}`)+`<div class="mil"><div id="qwrap"></div><div class="stack mil-side"><div class="lifelines"><button class="ll" id="ll50" ${p.ll.fifty?'':'disabled'}>50:50</button><button class="ll" id="llAud" ${p.ll.audience?'':'disabled'}>Ask the class</button><button class="ll" id="llSwap" ${p.ll.swap?'':'disabled'}>Swap</button><button class="ll walk" id="walk">Walk · ${fmt(p.rung?LADDER[p.rung-1]:0)}</button></div>${audHTML}<details class="ladder-wrap" ${window.innerWidth>=900?'open':''}><summary>Ladder · rung ${p.rung+1} of 15 · safe at 5 &amp; 10</summary>${ladderHTML(p)}</details></div></div>`; $("#qwrap",root).appendChild(stage); bindQuit(root,session); };
     paint();
     let result=null;
     while(!result){
@@ -389,7 +411,7 @@ function showResults(session){
   let unlocked=[];
   const recordFor=(profile,p,h2hWin)=>{
     const avg=p.times.length?p.times.reduce((a,b)=>a+b,0)/p.times.length:null;
-    const u=recordGame(profile,{game:cfg.game,unit,diff:cfg.diff,timed:!!cfg.timed,answered:p.answered,correct:p.correct,fast:p.fast,bestStreak:p.bestStreak,score:p.score,h2hWin,recycled:session.recycled,flags:session.flags,avgTime:avg,seen:session.seen});
+    const u=recordGame(profile,{game:cfg.game,unit,diff:cfg.diff,timed:!!cfg.timed,timeSec:cfg.timeSec,answered:p.answered,correct:p.correct,fast:p.fast,bestStreak:p.bestStreak,score:p.score,h2hWin,recycled:session.recycled,cycle:session.cycle,flags:session.flags,avgTime:avg,seen:session.seen,time:p.time,perUnit:p.perUnit,lesson:cfg.lesson});
     unlocked=unlocked.concat(u.map(x=>Object.assign({who:profile.name},x)));
   };
   if(!session.h2h){ const prof=Profile.current(); if(prof) recordFor(prof,session.players[0],false); }
@@ -400,13 +422,13 @@ function showResults(session){
   const totalA=session.players.reduce((a,p)=>a+p.answered,0), totalC=session.players.reduce((a,p)=>a+p.correct,0);
   const prog=Pool.progress(cfg);
   root.innerHTML=`<div class="results">
-    <div class="eyebrow">${esc(GAMES[cfg.game].name)} · ${esc(UNITS[unit].short)} · ${esc(diffName(cfg.diff))}${cfg.timed?" · timed":""}</div>
+    <div class="eyebrow">${esc(GAMES[cfg.game].name)} · ${esc(UNITS[unit].short)}${cfg.lesson!=null?" · Lesson "+esc(String(cfg.lesson))+" practice":""} · ${esc(diffName(cfg.diff))}${cfg.timed?" · timed":""}</div>
     ${session.h2h?`<h1 style="margin:.4rem 0">${tie?"It's a tie!":esc(winner.name)+" wins!"}</h1>`:`<h1 style="margin:.4rem 0">${esc(winner.name)}</h1>`}
     <div class="big">${fmt(winner.score)}</div>
     <p class="muted">${totalC}/${totalA} correct (${pctStr(totalC,totalA)})${session.recycled?" · pool exhausted — questions began recycling":""}</p>
     <p class="small muted" style="margin-top:.3rem">Pool progress: ${prog.used}/${prog.total} questions seen in this selection</p>
     ${session.h2h?`<div class="podium">${ranked.map((p,i)=>`<div class="p"><div class="small"><b>${esc(p.name)}</b><div class="muted">${p.correct}/${p.answered}</div></div><div class="bar" style="background:${p.color};height:${Math.max(2.4,7-i*1.4)}rem">${fmt(p.score)}</div></div>`).join("")}</div>`:""}
-    ${unlocked.length?`<div class="unlocks">${unlocked.map(u=>u.type==="badge"?`<div class="unlock u${u.unit}" style="--accent:${unitColor(u.unit)}"><span class="emblem" style="width:1.8rem;height:1.8rem;color:${unitColor(u.unit)}"><svg><use href="#em-${u.unit}"/></svg></span><div><b>${esc(u.def.name)}</b><div class="small muted">${esc(UNITS[u.unit].short)} badge${session.h2h?" · "+esc(u.who):""}</div></div></div>`:`<div class="unlock"><span class="acc-star" style="font-family:var(--serif);font-size:1.4rem;color:var(--accent)">★</span><div><b>${esc(u.def.name)}</b><div class="small muted">Accolade${session.h2h?" · "+esc(u.who):""}</div></div></div>`).join("")}</div>`:""}
+    ${unlocked.length?`<div class="unlocks">${unlocked.map(u=>u.type==="gold"?`<div class="unlock gold"><span class="gstar">✦</span><div><b>${esc(u.def.name)}</b><div class="small muted">Golden honour${u.unit?" · "+esc(UNITS[u.unit].short):""}${session.h2h?" · "+esc(u.who):""}</div></div></div>`:u.type==="gate"?`<div class="unlock" style="--accent:${unitColor(u.unit)}"><span class="emblem" style="width:1.8rem;height:1.8rem;color:${unitColor(u.unit)}"><svg><use href="#em-${u.unit}"/></svg></span><div><b>${esc(u.def.name)}</b><div class="small muted">${esc(UNITS[u.unit].short)} gate${session.h2h?" · "+esc(u.who):""}</div></div></div>`:u.type==="badge"?`<div class="unlock u${u.unit}" style="--accent:${unitColor(u.unit)}"><span class="emblem" style="width:1.8rem;height:1.8rem;color:${unitColor(u.unit)}"><svg><use href="#em-${u.unit}"/></svg></span><div><b>${esc(u.def.name)}</b><div class="small muted">${esc(UNITS[u.unit].short)} badge${session.h2h?" · "+esc(u.who):""}</div></div></div>`:u.def.ultimate?`<div class="unlock cogito-unlock"><span class="gstar">✦</span><div><b>${esc(u.def.name)}</b><div class="small" style="color:#f6e7bf">The ultimate honour${session.h2h?" · "+esc(u.who):""}</div></div></div>`:`<div class="unlock"><span class="acc-star" style="font-family:var(--serif);font-size:1.4rem;color:var(--accent)">★</span><div><b>${esc(u.def.name)}</b><div class="small muted">Accolade${session.h2h?" · "+esc(u.who):""}</div></div></div>`).join("")}</div>`:""}
     <div class="row" style="justify-content:center;margin-top:1rem">
       <button class="btn primary lg" id="rAgain">Play again</button>
       <button class="btn lg" id="rGames">Other games</button>
@@ -414,7 +436,7 @@ function showResults(session){
     </div>
     ${uniqWrong.length?`<div class="review"><div class="eyebrow" style="margin-bottom:.3rem">Review — ${uniqWrong.length} to revisit</div>${uniqWrong.map(l=>`<div class="r"><div class="small muted">${esc(unitShort(l.q.u))} · L${l.q.l} · ${esc(l.q.t)}</div><div>${esc(l.q.q)}</div><b>→ ${esc(l.q.a)}</b></div>`).join("")}</div>`:(totalA?`<p class="serif accent" style="font-size:1.4rem;margin-top:1.5rem;font-style:italic">Flawless. Sophia would be proud.</p>`:"")}
   </div>`;
-  $("#rAgain").onclick=()=>App.startGame(cfg.game); $("#rGames").onclick=()=>App.go("games"); $("#rHome").onclick=()=>App.go("home");
-  unlocked.forEach((u,i)=>setTimeout(()=>toast((u.type==="badge"?"Badge unlocked: ":"Accolade: ")+u.def.name,u.def.desc,u.type==="badge"?"ic-badge":"ic-trophy"),400+i*700));
+  $("#rAgain").onclick=()=>App.startGame(cfg.game,cfg.lesson); $("#rGames").onclick=()=>App.go("games"); $("#rHome").onclick=()=>App.go("home");
+  unlocked.forEach((u,i)=>setTimeout(()=>toast((u.def.ultimate?"✦ ":u.type==="badge"?"Badge unlocked: ":u.type==="gold"?"✦ Golden honour: ":u.type==="gate"?"Gate opened: ":"Accolade: ")+u.def.name,u.type==="gold"?"Show this to your teacher":u.def.desc,u.type==="badge"?"ic-badge":"ic-trophy"),400+i*700));
 }
 function unitColor(u){ return {1:"#d4a74a",2:"#35bfae",3:"#9b7cf5",4:"#e4607a",0:"#cfc6b2"}[u]; }

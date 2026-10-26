@@ -65,7 +65,7 @@ const Profile = {
   get(name){
     const p=LS.get("p."+name,null);
     if(p) return p;
-    return {name,created:todayISO(),stats:{games:0,answered:0,correct:0,fast:0,bestStreak:0,byGame:{},byUnit:{}},badges:{},accolades:{},seen:{}};
+    return {name,created:todayISO(),stats:{games:0,answered:0,correct:0,fast:0,bestStreak:0,byGame:{},byUnit:{},examGold:0},badges:{},accolades:{},seen:{},study:{},studyTime:{}};
   },
   save(p){ LS.set("p."+p.name,p); const all=this.all(); if(!all.includes(p.name)){all.push(p.name);LS.set("profiles",all);} },
   select(name){ LS.set("profile",name); const p=this.get(name); this.save(p); },
@@ -76,9 +76,9 @@ const Profile = {
    Pool key = units + difficulty + topics. Used ids persist per device (shared across profiles,
    so a class tablet keeps cycling through fresh questions). */
 const Pool = {
-  key(cfg){ return [cfg.units.slice().sort().join("-"),"d"+cfg.diff,cfg.topics.slice().sort().join(",")].join("|"); },
+  key(cfg){ return [cfg.units.slice().sort().join("-"),"d"+cfg.diff,cfg.topics.slice().sort().join(","),cfg.lesson!=null?"L"+cfg.lesson:""].join("|"); },
   base(cfg){
-    return BANK.filter(q=>(cfg.units.includes(0)||cfg.units.includes(q.u)) && cfg.topics.includes(q.t));
+    return BANK.filter(q=>(cfg.units.includes(0)||cfg.units.includes(q.u)) && cfg.topics.includes(q.t) && (cfg.lesson==null||String(q.l)===String(cfg.lesson)));
   },
   sizeFor(cfg){
     const b=this.base(cfg); if(cfg.diff==="mix") return b.length; return b.filter(q=>q.d===cfg.diff).length;
@@ -100,7 +100,7 @@ const Pool = {
       const levels=[0,1,2,3,4].sort((a,b)=>Math.abs(a-target)-Math.abs(b-target)||a-b);
       levels.forEach(l=>ordered.push(base.filter(q=>q.d===l)));
     }
-    let out=[], recycled=false;
+    let out=[], recycled=false, reset=false;
     // first pass: unused only, nearest level first
     for(const group of ordered){ if(out.length>=n) break; out=out.concat(shuffle(group.filter(q=>!used.has(q.id))).slice(0,n-out.length)); }
     if(out.length<n){
@@ -112,11 +112,11 @@ const Pool = {
     // if we recycled AND the whole pool had been used up, clear the used set so the cycle starts fresh
     if(recycled){
       const allIds=new Set(base.map(q=>q.id)); let allUsed=true; for(const id of allIds){ if(!used.has(id)){allUsed=false;break;} }
-      if(allUsed){ this.reset(cfg); }
+      if(allUsed){ this.reset(cfg); reset=true; }
     }
     // NOTE: questions are marked "used" only when actually shown (Session.present), so a Jeopardy
     // board abandoned half-way doesn't burn its unseen clues.
-    return {qs:out,recycled};
+    return {qs:out,recycled,reset};
   },
   progress(cfg){ const b=this.base(cfg); const tot=cfg.diff==="mix"?b.length:b.filter(q=>q.d===cfg.diff).length; const u=this.used(cfg); let c=0; b.forEach(q=>{ if((cfg.diff==="mix"||q.d===cfg.diff)&&u.has(q.id)) c++; }); return {used:c,total:tot}; }
 };
@@ -175,35 +175,110 @@ const ACCOLADE_DEFS = [
   {id:"marathon",name:"Marathon",desc:"Answer 250 questions in total",test:p=>p.stats.answered>=250},
   {id:"rival",name:"Rivalry",desc:"Win a head-to-head game",test:p=>!!p.stats.h2hwin},
   {id:"cycle",name:"Full Cycle",desc:"Exhaust an entire question pool",test:p=>!!p.stats.cycle},
-  {id:"laureate",name:"Laureate",desc:"Earn every other accolade",test:p=>ACCOLADE_DEFS.filter(a=>a.id!=="laureate").every(a=>p.accolades[a.id])}
+  {id:"librarian",name:"Librarian",desc:"Study every lesson of every unit in the Study Room",test:p=>[1,2,3,4].every(u=>unitStudyDone(p,u))},
+  {id:"laureate",name:"I think, therefore I am… a Philosopher",desc:"The ultimate honour: every accolade, every badge in every unit, every Golden honour, and Valedictorian",ultimate:true,
+   test:p=>ACCOLADE_DEFS.filter(a=>a.id!=="laureate").every(a=>p.accolades[a.id])&&[1,2,3,4].every(u=>BADGE_DEFS.every(b=>p.badges[u+":"+b.id]))&&!!p.accolades.valedictorian}
 ];
+
+/* ── per-unit lifetime record helper ── */
+function BU(p,u){ const s=p.stats; s.byUnit[u]=s.byUnit[u]||{games:0,games_by:{}}; const b=s.byUnit[u];
+  b.time=b.time||0; b.days=b.days||[]; b.a=b.a||0; b.c=b.c||0; b.l4a=b.l4a||0; b.l4c=b.l4c||0; b.lessons=b.lessons||{}; b.topics=b.topics||{}; b.bestStreak=b.bestStreak||0; b.gameL4=b.gameL4||{}; b.cycles=b.cycles||0; b.trRun=b.trRun||0; b.trBest=b.trBest||0; b.trSum=b.trSum||0; b.trN=b.trN||0; return b; }
+function unitHours(u){ return (UNITS[u]&&UNITS[u].lessons.length||6)*3600; }
+function lessonIds(u){ const m={}; BANK.forEach(q=>{ if(q.u===u){ (m[q.l]=m[q.l]||[]).push(q.id); } }); return m; }
+function unitTopicCount(u,t){ return BANK.filter(q=>q.u===u&&q.t===t).length; }
+function pct(c,a){ return a?c/a:0; }
+
+/* ── gates (visible, per unit) — all three unlock the hidden Golden tier ── */
+const GATE_DEFS=[
+  {id:"sentinel",name:"Sentinel",desc:"Play this unit on 10 different days",test:(p,u)=>BU(p,u).days.length>=10,prog:(p,u)=>[Math.min(10,BU(p,u).days.length),10]},
+  {id:"ironclad",name:"Ironclad",desc:"90%+ in a Level 4 game of 20+ questions, in each of the four games",test:(p,u)=>Object.keys(GAMES).every(g=>(BU(p,u).gameL4[g]?.best20||0)>=.9),prog:(p,u)=>[Object.keys(GAMES).filter(g=>(BU(p,u).gameL4[g]?.best20||0)>=.9).length,4]},
+  {id:"cartographer",name:"Cartographer",desc:"See every question in the unit and hold 85%+ lifetime accuracy in every topic",test:(p,u)=>unitSeen(p,u)>=unitTotal(u)&&TOPICS.every(t=>{const n=unitTopicCount(u,t); if(!n) return true; const r=BU(p,u).topics[t]||{a:0,c:0}; return r.a>=Math.min(20,n*2)&&pct(r.c,r.a)>=.85;}),prog:(p,u)=>[TOPICS.filter(t=>{const n=unitTopicCount(u,t); if(!n) return false; const r=BU(p,u).topics[t]||{a:0,c:0}; return r.a>=Math.min(20,n*2)&&pct(r.c,r.a)>=.85;}).length+(unitSeen(p,u)>=unitTotal(u)?1:0),TOPICS.filter(t=>unitTopicCount(u,t)).length+1]}
+];
+function gatesOpen(p,u){ return GATE_DEFS.every(g=>p.accolades["gate:"+u+":"+g.id]); }
+
+/* ── Golden tier (hidden until the gates open) ── */
+function lessonsSeenTwice(p,u){ const m=lessonIds(u); return Object.keys(m).every(l=>m[l].every(id=>(p.seen[id]||0)>=2)); }
+function timeOK(p,u){ return BU(p,u).time>=unitHours(u); }
+const GOLD_DEFS=[
+  {id:"check",name:"Golden Checkmark",desc:"97%+ lifetime accuracy (400+ answered), 95%+ at Level 4 (80+), a 40-answer streak, every lesson seen twice, and an hour of active play per lesson",
+   test:(p,u)=>{const b=BU(p,u); return timeOK(p,u)&&lessonsSeenTwice(p,u)&&b.a>=400&&pct(b.c,b.a)>=.97&&b.l4a>=80&&pct(b.l4c,b.l4a)>=.95&&b.bestStreak>=40;},
+   prog:(p,u)=>{const b=BU(p,u); return [[timeOK(p,u),lessonsSeenTwice(p,u),b.a>=400&&pct(b.c,b.a)>=.97,b.l4a>=80&&pct(b.l4c,b.l4a)>=.95,b.bestStreak>=40].filter(Boolean).length,5];}},
+  {id:"notebook",name:"Golden Notebook",desc:"95%+ in every lesson (20+ each), three full cycles of the unit pool, 90%+ in all four games at Level 4 (25+ Qs), every question seen, and an hour of active play per lesson",
+   test:(p,u)=>{const b=BU(p,u); const m=lessonIds(u); const lessonsOK=Object.keys(m).every(l=>{const r=b.lessons[l]||{a:0,c:0}; return r.a>=Math.min(20,m[l].length*2)&&pct(r.c,r.a)>=.95;}); const gamesOK=Object.keys(GAMES).every(g=>(b.gameL4[g]?.best25||0)>=.9); return timeOK(p,u)&&lessonsOK&&b.cycles>=3&&gamesOK&&unitSeen(p,u)>=unitTotal(u);},
+   prog:(p,u)=>{const b=BU(p,u); const m=lessonIds(u); const lessonsOK=Object.keys(m).every(l=>{const r=b.lessons[l]||{a:0,c:0}; return r.a>=Math.min(20,m[l].length*2)&&pct(r.c,r.a)>=.95;}); const gamesOK=Object.keys(GAMES).every(g=>(b.gameL4[g]?.best25||0)>=.9); return [[timeOK(p,u),lessonsOK,b.cycles>=3,gamesOK,unitSeen(p,u)>=unitTotal(u)].filter(Boolean).length,5];}},
+  {id:"review",name:"Golden Test Review",desc:"Ten consecutive timed (15s or faster) Level 3+ games of 20+ questions at 95%+, averaging under 8s per answer; three timed Level 4 All-Units games of 20+ at 95%+; and an hour of active play per lesson",
+   test:(p,u)=>{const b=BU(p,u); return timeOK(p,u)&&!!b.trDone&&(p.stats.examGold||0)>=3;},
+   prog:(p,u)=>{const b=BU(p,u); return [[timeOK(p,u),!!b.trDone,(p.stats.examGold||0)>=3].filter(Boolean).length,3];}}
+];
+function sealCode(name,u,kind,date){ const str=`${name}|${u}|${kind}|${date}|sophia-agora-2026`; let h=5381,h2=2166136261; for(const ch of str){ h=((h<<5)+h+ch.charCodeAt(0))>>>0; h2=Math.imul(h2^ch.charCodeAt(0),16777619)>>>0; } const c=(h.toString(36)+h2.toString(36)).toUpperCase().replace(/[^A-Z0-9]/g,"").slice(0,10); return c.slice(0,5)+"-"+c.slice(5); }
+function goldEarned(p,u,kind){ return p.accolades["gold:"+u+":"+kind]; }
+function allGold(p){ return [1,2,3,4].every(u=>GOLD_DEFS.every(g=>goldEarned(p,u,g.id))); }
+
+/* ── Study Room accolades ── */
+function lessonKey(u,l){ return u+":"+l; }
+function studyDone(p,u,l){ return !!(p.study&&p.study[lessonKey(u,l)]); }
+function unitStudyDone(p,u){ const ls=(window.LESSONS||[]).filter(L=>L.u===u); return ls.length>0&&ls.every(L=>studyDone(p,u,L.l)); }
+function studyRequired(L){ return Math.max(60,L.cards.length*8); } // seconds of reading needed
 
 /* Record a finished game for a profile; returns list of newly unlocked things */
 function recordGame(p,res){
-  // res: {game,unit,diff,timed,answered,correct,fast,bestStreak,score,h2hWin,recycled,flags:{king,wizard,dd}}
+  // res: {game,unit,diff,timed,timeSec,answered,correct,fast,bestStreak,score,h2hWin,recycled,cycle,flags,avgTime,seen,time,lessons,topics,l4a,l4c,units}
   const s=p.stats; s.games++; s.answered+=res.answered; s.correct+=res.correct; s.fast+=res.fast||0; s.bestStreak=Math.max(s.bestStreak,res.bestStreak||0);
   s.byGame[res.game]=(s.byGame[res.game]||0)+1;
-  const u=res.unit; s.byUnit[u]=s.byUnit[u]||{games:0,games_by:{}}; const bu=s.byUnit[u]; bu.games++; bu.games_by[res.game]=1;
-  const pct=res.answered?res.correct/res.answered:0;
-  if(pct>=.7&&res.answered>=5) bu.scholar=true;
-  if(pct>=.7&&res.answered>=5&&res.diff===4) bu.sage=true;
+  const u=res.unit; const bu=BU(p,u); bu.games++; bu.games_by[res.game]=1;
+  const pc=res.answered?res.correct/res.answered:0;
+  if(pc>=.7&&res.answered>=5) bu.scholar=true;
+  if(pc>=.7&&res.answered>=5&&res.diff===4) bu.sage=true;
   if(res.timed&&(res.fast||0)>=10) bu.swift=true;
-  if(pct===1&&res.answered>=10) s.perfect=true;
+  if(pc===1&&res.answered>=10) s.perfect=true;
   if(res.flags){ Object.keys(res.flags).forEach(k=>{ if(res.flags[k]) s[k]=true; }); }
   if(res.game==="sprint"&&res.correct>=15) s.lightning=true;
-  if(u===0&&pct>=.7&&res.answered>=10&&(res.diff===3||res.diff===4)) s.exam=true;
+  if(u===0&&pc>=.7&&res.answered>=10&&(res.diff===3||res.diff===4)) s.exam=true;
   if(!res.timed&&res.diff===4&&res.answered>=10) s.purist=true;
   if(res.timed&&res.answered>=10&&res.avgTime&&res.avgTime<4) s.speed=true;
   if(res.h2hWin) s.h2hwin=true;
   if(res.recycled) s.cycle=true;
-  (res.seen||[]).forEach(id=>p.seen[id]=1);
-  // unlocks
+  (res.seen||[]).forEach(id=>p.seen[id]=(p.seen[id]||0)+1);
+  // ── lifetime per-unit detail, credited to the unit each question belongs to (so All-Units play counts too) ──
+  const today=todayISO(); const per=res.perUnit||{};
+  Object.keys(per).forEach(k=>{ const un=+k, sh=per[k], b=BU(p,un); if(!b.days.includes(today)) b.days.push(today);
+    b.time+=sh.time||0; b.a+=sh.a||0; b.c+=sh.c||0; b.l4a+=sh.l4a||0; b.l4c+=sh.l4c||0; b.bestStreak=Math.max(b.bestStreak,res.bestStreak||0);
+    Object.keys(sh.lessons||{}).forEach(l=>{ b.lessons[l]=b.lessons[l]||{a:0,c:0}; b.lessons[l].a+=sh.lessons[l].a; b.lessons[l].c+=sh.lessons[l].c; });
+    Object.keys(sh.topics||{}).forEach(t=>{ b.topics[t]=b.topics[t]||{a:0,c:0}; b.topics[t].a+=sh.topics[t].a; b.topics[t].c+=sh.topics[t].c; }); });
+  if(!bu.days.includes(today)) bu.days.push(today);
+  if(u!==0){
+    if(res.diff===4&&res.answered>=20){ const g=bu.gameL4[res.game]=bu.gameL4[res.game]||{best20:0,best25:0}; g.best20=Math.max(g.best20,pc); if(res.answered>=25) g.best25=Math.max(g.best25,pc); }
+    if(res.cycle) bu.cycles++;
+    // Golden Test Review run: timed ≤15s, L3+, 20+ Qs; 95%+ continues the run, a miss resets it
+    if(res.timed&&(res.timeSec||99)<=15&&res.answered>=20&&(res.diff===3||res.diff===4)){
+      if(pc>=.95){ bu.trRun++; bu.trSum+=res.avgTime||0; bu.trN++; bu.trBest=Math.max(bu.trBest,bu.trRun); if(bu.trRun>=10&&(bu.trSum/bu.trN)<8) bu.trDone=true; }
+      else { bu.trRun=0; bu.trSum=0; bu.trN=0; }
+    }
+  } else if(res.timed&&res.diff===4&&res.answered>=20&&pc>=.95){ s.examGold=(s.examGold||0)+1; }
+  // ── unlocks ──
   const unlocked=[];
   [1,2,3,4].forEach(un=>{ BADGE_DEFS.forEach(b=>{ const k=un+":"+b.id; if(!p.badges[k]&&b.test(p,un)){ p.badges[k]=todayISO(); unlocked.push({type:"badge",unit:un,def:b}); } }); });
-  // two passes so laureate/polymath see fresh unlocks
-  for(let pass=0;pass<2;pass++) ACCOLADE_DEFS.forEach(a=>{ if(!p.accolades[a.id]&&a.test(p)){ p.accolades[a.id]=todayISO(); unlocked.push({type:"accolade",def:a}); } });
+  for(let pass=0;pass<2;pass++){
+    ACCOLADE_DEFS.forEach(a=>{ if(!p.accolades[a.id]&&a.test(p)){ p.accolades[a.id]=todayISO(); unlocked.push({type:"accolade",def:a}); } });
+    [1,2,3,4].forEach(un=>{
+      GATE_DEFS.forEach(g=>{ const k="gate:"+un+":"+g.id; if(!p.accolades[k]&&g.test(p,un)){ p.accolades[k]=todayISO(); unlocked.push({type:"gate",unit:un,def:g}); } });
+      if(gatesOpen(p,un)) GOLD_DEFS.forEach(g=>{ const k="gold:"+un+":"+g.id; if(!p.accolades[k]&&g.test(p,un)){ const d=todayISO(); p.accolades[k]={date:d,seal:sealCode(p.name,un,g.id,d)}; unlocked.push({type:"gold",unit:un,def:g}); } });
+    });
+    if(p.accolades.laureate&&typeof p.accolades.laureate==="string"){ const d=p.accolades.laureate; p.accolades.laureate={date:d,seal:sealCode(p.name,0,"cogito",d)}; }
+    if(!p.accolades.valedictorian&&allGold(p)){ const d=todayISO(); p.accolades.valedictorian={date:d,seal:sealCode(p.name,0,"valedictorian",d)}; unlocked.push({type:"gold",unit:0,def:{id:"valedictorian",name:"Valedictorian",desc:"Every Golden honour in every unit"}}); }
+  }
   Profile.save(p);
   return unlocked;
+}
+
+/* Record study time; marks a lesson complete once it's been read to the end with enough time. Returns unlocks. */
+function recordStudy(p,u,l,secs,reachedEnd){
+  p.study=p.study||{}; p.studyTime=p.studyTime||{}; const k=lessonKey(u,l); p.studyTime[k]=(p.studyTime[k]||0)+secs;
+  const unlocked=[]; const L=(window.LESSONS||[]).find(x=>x.u===u&&String(x.l)===String(l));
+  if(L&&reachedEnd&&!p.study[k]&&p.studyTime[k]>=studyRequired(L)){ p.study[k]=todayISO(); unlocked.push({type:"study",unit:u,def:{name:"Lesson studied: "+L.title,desc:UNITS[u].short}}); }
+  [1,2,3,4].forEach(un=>{ const key="lamp:"+un; if(!p.accolades[key]&&unitStudyDone(p,un)){ p.accolades[key]=todayISO(); unlocked.push({type:"accolade",unit:un,def:{id:key,name:"Scholar's Lamp — "+UNITS[un].short,desc:"Studied every lesson in the unit"}}); } });
+  if(!p.accolades.librarian&&[1,2,3,4].every(un=>unitStudyDone(p,un))){ p.accolades.librarian=todayISO(); unlocked.push({type:"accolade",def:{id:"librarian",name:"Librarian",desc:"Studied every lesson in the course"}}); }
+  Profile.save(p); return unlocked;
 }
 
 /* ── UI helpers ── */
