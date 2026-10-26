@@ -1,5 +1,5 @@
 /* Agora service worker — offline-first app shell */
-const VERSION = 'agora-v1.2.1';
+const VERSION = 'agora-v1.2.2';
 const SHELL = [
   './', './index.html', './style.css',
   './core.js', './games.js', './app.js',

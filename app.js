@@ -15,8 +15,9 @@ const App = {
     $("#btnStudy").onclick=()=>this.go("study");
     $("#btnProfile").onclick=()=>this.profileModal();
     $("#btnInstall").onclick=()=>this.install();
-    window.addEventListener("beforeinstallprompt",e=>{ e.preventDefault(); this.deferredInstall=e; $("#btnInstall").hidden=false; });
-    window.addEventListener("appinstalled",()=>{ $("#btnInstall").hidden=true; toast("Installed","Agora is now on your device","ic-download"); });
+    window.addEventListener("beforeinstallprompt",e=>{ e.preventDefault(); this.deferredInstall=e; });
+    window.addEventListener("appinstalled",()=>{ this.deferredInstall=null; this.refreshInstallChip(); toast("Installed","Agora is now on your device","ic-download"); });
+    this.refreshInstallChip();
     if("serviceWorker" in navigator){ navigator.serviceWorker.register("sw.js").catch(()=>{}); }
     if(!Profile.currentName()){ this.profileModal(true); }
     this.refreshProfileChip();
@@ -50,10 +51,12 @@ const App = {
       <p class="mantra" style="margin-top:1rem">“Be Curious First, Not Critical.”</p>
     </section>
     <div class="grid grid-2">${[1,2,3,4,0].map(u=>`<div class="u${u}"><button class="card card-btn unit-card" data-u="${u}"><div class="n">${u||"∞"}</div><div><h3>${esc(UNITS[u].title)}</h3><div class="lessons">${u?UNITS[u].lessons.length+" lessons · ":""}${u?unitTotal(u):BANK.length} questions · ${esc(UNITS[u].tag)}</div></div>${emblem(u)}</button></div>`).join("")}</div>
+    ${this.isInstalled()?"":`<button class="card card-btn study-card install-card" id="homeInstall"><span class="gicon"><svg><use href="#ic-download"/></svg></span><div><h3>Install on this device</h3><div class="lessons">Works offline, launches full-screen from its own icon — phone, tablet or laptop.</div></div></button>`}
     <button class="card card-btn study-card" id="homeStudy"><span class="gicon"><svg><use href="#ic-book"/></svg></span><div><h3>Study Room</h3><div class="lessons">Read every lesson, card by card, then practise it — ${(window.LESSONS||[]).length} lessons · ${p?Object.keys(p.study||{}).length:0} studied</div></div></button>
     <div class="stats-strip"><div><b>${BANK.length}</b>questions</div><div><b>${games}</b>games played${p?" by "+esc(p.name):""}</div><div><b>${ans}</b>answered</div><div><b>${p?Object.keys(p.badges).length:0}</b>badges</div></div>`;
     $$(".unit-card",this.root).forEach(b=>b.onclick=()=>{ this.s.units=[+b.dataset.u]; this.save(); this.go("setup"); });
     $("#homeStudy",this.root).onclick=()=>this.go("study");
+    const hi=$("#homeInstall",this.root); if(hi) hi.onclick=()=>this.install();
   },
 
   /* ── SETUP ── */
@@ -290,7 +293,38 @@ const App = {
       else { await (d.requestFullscreen?d.requestFullscreen({navigationUI:"hide"}):d.webkitRequestFullscreen()); await this.applyOrientation(false); }
     }catch(e){ toast("Fullscreen unavailable","On iPhone, use Share → Add to Home Screen for a full-screen app","ic-fullscreen"); }
   },
-  install(){ if(this.deferredInstall){ this.deferredInstall.prompt(); this.deferredInstall=null; $("#btnInstall").hidden=true; } }
+  isInstalled(){ return matchMedia("(display-mode: standalone)").matches||matchMedia("(display-mode: fullscreen)").matches||navigator.standalone===true; },
+  refreshInstallChip(){ const b=$("#btnInstall"); if(b) b.hidden=this.isInstalled(); },
+  platform(){
+    const ua=navigator.userAgent||""; const iOS=/iPhone|iPad|iPod/.test(ua)||(navigator.platform==="MacIntel"&&navigator.maxTouchPoints>1);
+    if(iOS) return /CriOS|FxiOS|EdgiOS/.test(ua)?"ios-other":"ios";
+    if(/Android/.test(ua)) return /SamsungBrowser/.test(ua)?"samsung":/Firefox/.test(ua)?"android-firefox":"android";
+    if(/Firefox/.test(ua)) return "desktop-firefox"; if(/Safari/.test(ua)&&!/Chrome|Chromium|Edg/.test(ua)) return "mac-safari";
+    return "desktop";
+  },
+  async install(){
+    if(this.deferredInstall){ try{ this.deferredInstall.prompt(); const r=await this.deferredInstall.userChoice; this.deferredInstall=null; if(r&&r.outcome==="accepted") return; }catch(e){} }
+    this.installGuide();
+  },
+  installGuide(){
+    const pf=this.platform(); const url=location.href.replace(/[#?].*$/,"");
+    const steps={
+      ios:["Tap the <b>Share</b> button at the bottom of Safari <svg class=\"ic\" style=\"vertical-align:-3px\"><use href=\"#ic-share-ios\"/></svg>","Scroll the sheet and tap <b>Add to Home Screen</b>","Tap <b>Add</b>. Agora opens full-screen from your home screen and works offline"],
+      "ios-other":["Open this page in <b>Safari</b> (Apple only allows installing from Safari)","Tap <b>Share</b> → <b>Add to Home Screen</b> → <b>Add</b>"],
+      android:["Tap the <b>⋮</b> menu in the top-right of Chrome","Tap <b>Install app</b> (or <b>Add to Home screen</b>)","Confirm — Agora appears in your app drawer like any other app"],
+      samsung:["Tap the <b>☰</b> menu at the bottom of Samsung Internet","Tap <b>Add page to</b> → <b>Home screen</b>"],
+      "android-firefox":["Tap the <b>⋮</b> menu","Tap <b>Install</b> (or <b>Add to Home screen</b>)"],
+      desktop:["Look for the <b>install icon</b> at the right end of the address bar (a monitor with an arrow)","Click it, then <b>Install</b>. Agora opens in its own window — pin it to the taskbar or dock if you like","No icon? Open the browser menu <b>⋮</b> → <b>Cast, save and share</b> → <b>Install page as app…</b>"],
+      "desktop-firefox":["Firefox on desktop can't install web apps. Use <b>Chrome</b> or <b>Edge</b> for the install option","Or just bookmark this page — everything works in the browser too"],
+      "mac-safari":["In Safari, click <b>File</b> → <b>Add to Dock…</b>","Click <b>Add</b>. Agora opens as its own app from the Dock"]
+    }[pf];
+    const title={ios:"iPhone / iPad",'ios-other':"iPhone / iPad",android:"Android",samsung:"Samsung Internet","android-firefox":"Android (Firefox)",desktop:"Windows / Mac / Chromebook","desktop-firefox":"Firefox","mac-safari":"Mac (Safari)"}[pf];
+    const b=modal(`<div class="eyebrow">Install Agora</div><h3 style="margin:.3rem 0 .3rem">Put it on your ${esc(title)}</h3><p class="small muted" style="margin-bottom:.9rem">Installed, Agora launches full-screen from its own icon, keeps working without Wi-Fi, and your profile, badges and scores stay on the device.</p>
+      <ol class="install-steps">${steps.map(x=>`<li>${x}</li>`).join("")}</ol>
+      <details style="margin-top:.8rem"><summary class="small muted" style="cursor:pointer">On a different device?</summary><div class="small muted" style="margin-top:.5rem;line-height:1.6"><b>iPhone/iPad:</b> Safari → Share → Add to Home Screen.<br><b>Android:</b> Chrome ⋮ → Install app.<br><b>Laptop:</b> Chrome/Edge → install icon in the address bar.<br><b>Address:</b> <code>${esc(url)}</code></div></details>
+      <div class="row" style="margin-top:1rem;justify-content:flex-end"><button class="btn primary" id="iClose">Got it</button></div>`);
+    $("#iClose",b).onclick=closeModal;
+  },
 };
 
 document.addEventListener("DOMContentLoaded",()=>App.init());

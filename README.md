@@ -1,4 +1,4 @@
-# Agora — HZT4U Review Arena  (v1.2.1 — Study Room, Gates, Golden tier, ultimate honour)
+# Agora — HZT4U Review Arena  (v1.2.2 — Study Room, Gates, Golden tier, ultimate honour, install guide)
 
 A classroom review game for HZT4U (Philosophy: Questions & Theories). Four games, four units, 700 questions written
 only from the course slide decks. Works in any browser, installs as an app on phones/tablets/laptops, and runs offline
@@ -24,7 +24,8 @@ Once it's on Netlify, every device can install it from the browser — no app st
 
 | Device | How |
 |---|---|
-| **Android (Chrome/Edge)** | Open the site → tap the **Install** button in Agora's top bar (or browser menu → *Install app* / *Add to Home screen*). |
+| **Any device** | Tap the **Install** chip in Agora's top bar (or the Install card on the home screen). Where the browser supports a native prompt it appears; otherwise a step-by-step guide for that exact device opens. |
+| **Android (Chrome/Edge)** | Install chip, or browser menu → *Install app* / *Add to Home screen*. |
 | **iPhone / iPad (Safari)** | Open the site → Share button → **Add to Home Screen**. (Safari doesn't show an install button; this is the Apple way.) |
 | **Windows / Mac / Chromebook (Chrome/Edge)** | Click the install icon in the address bar, or Agora's **Install** button. It opens in its own window like a desktop app. |
 | **Smartboard / projector PC** | Install in Chrome as above, then use **Head-to-Head → Projector mode** for large type. |
