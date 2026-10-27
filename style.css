@@ -45,7 +45,13 @@ input,select{font:inherit;color:inherit}
 .hidden,[hidden]{display:none!important}
 
 /* ── top bar ── */
-.topbar{position:sticky;top:0;z-index:20;display:flex;align-items:center;justify-content:space-between;padding:.6rem 1rem;backdrop-filter:blur(12px);background:rgba(15,14,20,.72);border-bottom:1px solid var(--line)}
+.topbar{position:sticky;top:0;z-index:20;display:flex;align-items:center;justify-content:space-between;padding:.6rem 1rem;backdrop-filter:blur(12px);background:rgba(15,14,20,.72);border-bottom:1px solid var(--line);
+  /* keep the buttons clear of the iPhone status bar / notch when installed to the home screen */
+  padding-top:calc(.6rem + env(safe-area-inset-top,0px));padding-left:calc(1rem + env(safe-area-inset-left,0px));padding-right:calc(1rem + env(safe-area-inset-right,0px))}
+.app{padding-left:calc(1rem + env(safe-area-inset-left,0px));padding-right:calc(1rem + env(safe-area-inset-right,0px));padding-bottom:calc(4rem + env(safe-area-inset-bottom,0px))}
+.toasts{bottom:calc(1.2rem + env(safe-area-inset-bottom,0px))}
+.summary{top:calc(5rem + env(safe-area-inset-top,0px))}
+.jumpbar{top:calc(3.9rem + env(safe-area-inset-top,0px))}
 .brand{display:flex;align-items:center;gap:.6rem;text-align:left}
 .brand-mark{display:grid;place-items:center;width:2.1rem;height:2.1rem;border-radius:9px;background:rgba(var(--accent-rgb),.15);color:var(--accent)}
 .brand-mark svg{width:1.4rem;height:1.4rem;fill:none;stroke:currentColor}
@@ -299,14 +305,14 @@ table.lb{width:100%;border-collapse:collapse;font-size:.92rem}
 .projector .app{max-width:1500px}
 /* ── small screens: fit the game to the viewport ── */
 @media(max-width:700px){
-  .topbar{padding:.4rem .7rem}
+  .topbar{padding:.4rem .7rem;padding-top:calc(.4rem + env(safe-area-inset-top,0px));padding-left:calc(.7rem + env(safe-area-inset-left,0px));padding-right:calc(.7rem + env(safe-area-inset-right,0px))}
   .brand-sub{display:none}
   .brand-mark{width:1.8rem;height:1.8rem}
   .brand-name{font-size:1.15rem}
   .icon-btn{width:2rem;height:2rem}
   .topbar .chip{padding:.35rem .5rem;max-width:7rem}
   .topbar .chip span{display:none}
-  .app{padding:.7rem .6rem 3rem}
+  .app{padding:.7rem .6rem 3rem;padding-left:calc(.6rem + env(safe-area-inset-left,0px));padding-right:calc(.6rem + env(safe-area-inset-right,0px));padding-bottom:calc(3rem + env(safe-area-inset-bottom,0px))}
   .hero{padding:1.2rem 0 .8rem}
   .game-top{gap:.4rem;margin-bottom:.5rem}
   .game-top .back span{display:none}
@@ -350,7 +356,7 @@ table.lb{width:100%;border-collapse:collapse;font-size:.92rem}
 }
 /* short viewports (phone landscape): squeeze vertical chrome */
 @media(max-height:520px){
-  .topbar{padding:.25rem .7rem}
+  .topbar{padding:.25rem .7rem;padding-top:calc(.25rem + env(safe-area-inset-top,0px));padding-left:calc(.7rem + env(safe-area-inset-left,0px));padding-right:calc(.7rem + env(safe-area-inset-right,0px))}
   .brand-sub{display:none}
   .brand-mark{width:1.7rem;height:1.7rem}
   .brand-name{font-size:1.05rem}
@@ -402,7 +408,7 @@ table.lb{width:100%;border-collapse:collapse;font-size:.92rem}
 .jumpbar{position:sticky;top:3.9rem;z-index:5;display:flex;gap:.4rem;overflow-x:auto;padding:.5rem 0;margin-bottom:.6rem;background:linear-gradient(var(--ink) 70%,transparent)}
 .jumpbar a{flex:none;padding:.4rem .8rem;border-radius:999px;border:1px solid var(--line-2);background:var(--ink-3);color:var(--paper-dim);font-size:.8rem;font-weight:600;text-decoration:none}
 .jumpbar a:hover{border-color:var(--accent);color:var(--paper)}
-@media(max-width:700px){.jumpbar{top:3.1rem}}
+@media(max-width:700px){.jumpbar{top:calc(3.1rem + env(safe-area-inset-top,0px))}}
 /* ── the ultimate honour ── */
 @keyframes shimmer{0%{background-position:0% 50%}100%{background-position:200% 50%}}
 .cogito{position:relative;margin-bottom:1.2rem;padding:1.6rem 1.4rem 1.4rem;border-radius:var(--r-lg);text-align:center;background:linear-gradient(160deg,#1c1710,#17161f 60%,#141a1c);isolation:isolate;overflow:hidden}
