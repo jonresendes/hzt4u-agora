@@ -20,6 +20,8 @@ const App = {
     this.refreshInstallChip();
     if("serviceWorker" in navigator){ navigator.serviceWorker.register("sw.js").catch(()=>{}); }
     if(!Profile.currentName()){ this.profileModal(true); }
+    setTimeout(()=>this.checkUpdate(false),2500);
+    window.addEventListener("online",()=>this.checkUpdate(false));
     this.refreshProfileChip();
     this.go("home");
   },
@@ -177,18 +179,22 @@ const App = {
     if(!p){ this.root.innerHTML=`<div class="card" style="text-align:center;padding:3rem"><h2>No player selected</h2><p class="muted" style="margin:.5rem 0 1rem">Create or choose a profile to track badges.</p><button class="btn primary" id="mk">Choose profile</button></div>`; $("#mk",this.root).onclick=()=>this.profileModal(); return; }
     const s=p.stats;
     this.root.innerHTML=`<div class="screen-head"><div><button class="back" id="back"><svg class="ic"><use href="#ic-back"/></svg> Home</button><div class="eyebrow">${esc(p.name)}</div><h2>Badges & Accolades</h2></div>
-      <div class="stats-strip" style="margin:0"><div><b>${s.games}</b>games</div><div><b>${s.answered}</b>answered</div><div><b>${pctStr(s.correct,s.answered)}</b>accuracy</div><div><b>${s.bestStreak}</b>best streak</div></div></div>
+      <div class="stats-strip" style="margin:0"><div><b>${s.games}</b>games</div><div><b>${s.answered}</b>answered</div><div><b>${s.bestStreak}</b>best streak</div></div></div>
+    ${(()=>{ const ca=courseAvg(p); const ex=p.accolades.exam_exempt; return `<div class="card exam-card ${ex?"earned":""}" style="margin-bottom:1rem"><div class="row between"><div><div class="eyebrow" style="color:${ex?"#ffd978":"var(--accent)"}">${ex?"✦ Exam Exemption earned":"Course average · toward Exam Exemption"}</div><div class="row" style="gap:1rem;margin-top:.4rem;align-items:baseline"><span class="big-pct">${ca.units.every(x=>x.a)?Math.round(ca.avg*1000)/10+"%":"—"}</span><span class="small muted">average of the four unit accuracies · needs 93%+ with ${EXAM_MIN}+ answered in every unit</span></div>${ex?`<div class="seal" style="margin-top:.3rem">Seal ${esc(ex.seal)} · ${esc(ex.date)} · ${ex.avg}%</div>`:""}</div></div>
+      <div class="unit-accs">${[1,2,3,4].map(u=>{ const x=ca.units[u-1]; return `<div class="uacc u${u}" style="--accent:${unitColor(u)}"><div class="eyebrow">${esc(UNITS[u].short)}</div><b>${x.a?Math.round(x.pct*1000)/10+"%":"—"}</b><span>${x.c}/${x.a} correct${x.a<EXAM_MIN?" · "+(EXAM_MIN-x.a)+" more to count":""}</span><div class="prog"><i style="width:${Math.min(100,100*x.pct)}%"></i></div></div>`; }).join("")}</div></div>`; })()}
     ${p.accolades.laureate?`<div class="cogito"><div class="laurel" aria-hidden="true"><svg viewBox="0 0 64 64"><use href="#ic-laurel"/></svg></div><div class="eyebrow" style="color:#f6e7bf">The ultimate honour</div><h2 class="cogito-title">I think, therefore I am… <em>a Philosopher</em></h2><p class="muted">Every accolade. Every badge. Every Golden honour. Valedictorian. ${esc(p.name)} has finished the Agora.</p><div class="seal" style="margin-top:.6rem">Seal ${esc(p.accolades.laureate.seal||"")} · ${esc(p.accolades.laureate.date||"")}</div></div>`:""}
-    <div class="jumpbar"><a href="#secBadges">Badges</a><a href="#secGates">Gates & Golden</a><a href="#secStudy">Study Room</a><a href="#secAcc">Accolades</a></div>
+    <div class="jumpbar"><a href="#secBadges">Badges</a><a href="#secGates">Gates & Golden</a><a href="#secStudy">Study Room</a><a href="#secArt">Artifacts</a><a href="#secAcc">Accolades</a></div>
     <div id="secBadges"></div>
-    ${[1,2,3,4].map(u=>`<div class="u${u} card" style="margin-bottom:1rem"><div class="row between" style="margin-bottom:.8rem"><div><div class="eyebrow">Unit ${u} · ${esc(UNITS[u].badgeName)} badges</div><h3>${esc(UNITS[u].title)}</h3></div>${emblem(u)}</div>
+    ${[1,2,3,4].map(u=>`<div class="u${u} card" style="margin-bottom:1rem"><div class="row between" style="margin-bottom:.8rem"><div><div class="eyebrow">Unit ${u} · ${esc(UNITS[u].badgeName)} badges</div><h3>${esc(UNITS[u].title)}</h3><div class="small muted">Unit accuracy <b style="color:var(--accent)">${unitAcc(p,u).a?Math.round(unitAcc(p,u).pct*1000)/10+"%":"—"}</b> · ${unitAcc(p,u).c}/${unitAcc(p,u).a} · ${BU(p,u).games} games</div></div>${emblem(u)}</div>
       <div class="badge-grid">${BADGE_DEFS.map(b=>{ const got=p.badges[u+":"+b.id]; const pr=b.prog?b.prog(p,u):null; return `<div class="badge ${got?"":"locked"}"><div class="medal"><svg><use href="#em-${u}"/></svg></div><b>${esc(b.name)}</b><span>${esc(b.desc)}</span>${got?`<span class="pill">Earned ${got}</span>`:(pr?`<div class="prog"><i style="width:${Math.min(100,100*pr[0]/pr[1])}%"></i></div><span>${pr[0]}/${pr[1]}</span>`:"")}</div>`; }).join("")}</div></div>`).join("")}
     <div id="secGates"></div>
     ${[1,2,3,4].map(u=>{ const open=gatesOpen(p,u); return `<div class="u${u} card" style="margin-bottom:1rem"><div class="row between" style="margin-bottom:.6rem"><div><div class="eyebrow">Unit ${u} · Gates</div><h3>${esc(UNITS[u].short)}</h3></div>${emblem(u)}</div>
       <div class="grid grid-3">${GATE_DEFS.map(g=>{ const got=p.accolades["gate:"+u+":"+g.id]; const pr=g.prog?g.prog(p,u):null; return `<div class="acc ${got?"":"locked"}"><div class="star">${got?"◆":"◇"}</div><div style="flex:1"><b>${esc(g.name)}</b><span>${esc(g.desc)}${got?" · "+got:""}</span>${!got&&pr?`<div class="prog" style="margin-top:.35rem;height:.25rem;border-radius:99px;background:var(--ink-4);overflow:hidden"><i style="display:block;height:100%;width:${Math.min(100,100*pr[0]/pr[1])}%;background:var(--accent)"></i></div>`:""}</div></div>`; }).join("")}</div>
-      ${open?`<div class="gold-tier"><div class="eyebrow gold-eb">✦ Golden tier unlocked</div><div class="grid grid-3">${GOLD_DEFS.map(g=>{ const got=goldEarned(p,u,g.id); const pr=g.prog(p,u); return `<div class="acc gold ${got?"":"locked"}"><div class="star">✦</div><div style="flex:1"><b>${esc(g.name)}</b><span>${esc(g.desc)}</span>${got?`<div class="seal">Seal ${esc(got.seal)} · ${esc(got.date)}</div>`:`<div class="small muted" style="margin-top:.3rem">${pr[0]}/${pr[1]} requirements met · ${Math.floor(BU(p,u).time/3600)}h ${Math.floor(BU(p,u).time%3600/60)}m of ${UNITS[u].lessons.length}h played</div>`}</div></div>`; }).join("")}</div></div>`:`<p class="small muted" style="margin-top:.6rem">Open all three gates and the Agora may reveal more.</p>`}</div>`; }).join("")}
+      ${open?`<div class="gold-tier"><div class="eyebrow gold-eb">✦ Golden tier unlocked</div><div class="grid grid-3">${GOLD_DEFS.map(g=>{ const got=goldEarned(p,u,g.id); const pr=g.prog(p,u); return `<div class="acc gold ${got?"":"locked"}"><div class="star">✦</div><div style="flex:1"><b>${esc(g.name)}</b><span>${esc(g.desc)}</span>${got?`<div class="seal">Seal ${esc(got.seal)} · ${esc(got.date)}</div>`:`<div class="small muted" style="margin-top:.3rem">${pr[0]}/${pr[1]} requirements met · unit accuracy ${unitAcc(p,u).a?Math.round(unitAcc(p,u).pct*1000)/10+"%":"—"} · ${Math.floor(BU(p,u).time/3600)}h ${Math.floor(BU(p,u).time%3600/60)}m of ${UNITS[u].lessons.length}h played</div>`}</div></div>`; }).join("")}</div></div>`:`<p class="small muted" style="margin-top:.6rem">Open all three gates and the Agora may reveal more.</p>`}</div>`; }).join("")}
     ${p.accolades.valedictorian?`<div class="card gold-tier" style="margin-bottom:1rem"><div class="eyebrow gold-eb">✦ Valedictorian</div><p>Every Golden honour in every unit. Seal <b>${esc(p.accolades.valedictorian.seal)}</b> · ${esc(p.accolades.valedictorian.date)}</p></div>`:""}
     <div id="secStudy"></div><div class="card" style="margin-bottom:1rem"><div class="eyebrow" style="margin-bottom:.8rem">Study Room</div><div class="grid grid-2">${[1,2,3,4].map(u=>{ const ls=(window.LESSONS||[]).filter(L=>L.u===u); return `<div class="u${u}" style="--accent:${unitColor(u)}"><b>${esc(UNITS[u].short)}</b> ${p.accolades["lamp:"+u]?`<span class="pill">✦ Scholar's Lamp</span>`:""}<div class="row" style="margin-top:.4rem;gap:.3rem">${ls.map(L=>`<span class="lchip ${studyDone(p,u,L.l)?"on":""}" title="${esc(L.title)}">${esc(String(L.l))}</span>`).join("")}</div></div>`; }).join("")}</div></div>
+    <div id="secArt"></div><div class="card" style="margin-bottom:1rem"><div class="row between" style="margin-bottom:.3rem"><div class="eyebrow">Artifacts · ${Object.keys(p.artifacts||{}).length}/${(window.ARTIFACTS||[]).length}</div></div><p class="small muted" style="margin-bottom:.8rem">Answer questions about a thinker correctly and their relic is yours.</p>
+      <div class="art-grid">${(window.ARTIFACTS||[]).map(a=>{ const got=(p.artifacts||{})[a.id]; const n=Math.min(a.need,(p.phil||{})[a.id]||0); return `<div class="art ${got?"":"locked"}"><div class="relic">${a.icon}</div><b>${esc(a.name)}</b><span>${esc(a.who)}</span>${got?`<span class="pill">Found ${got}</span><span>${esc(a.desc)}</span>`:`<div class="prog"><i style="width:${100*n/a.need}%"></i></div><span>${n}/${a.need} correct</span>`}</div>`; }).join("")}</div></div>
     <div id="secAcc"></div><div class="card"><div class="eyebrow" style="margin-bottom:.8rem">Accolades · ${ACCOLADE_DEFS.filter(a=>p.accolades[a.id]).length}/${ACCOLADE_DEFS.length}</div><div class="grid grid-3">${ACCOLADE_DEFS.map(a=>{ const got=p.accolades[a.id]; const date=got&&(typeof got==="string"?got:got.date); return `<div class="acc ${got?"":"locked"} ${a.ultimate?"ultimate":""}"><div class="star">${a.ultimate?"✦":got?"★":"☆"}</div><div><b>${esc(a.name)}</b><span>${esc(a.desc)}${date?" · "+esc(date):""}</span></div></div>`; }).join("")}</div></div>`;
     $("#back",this.root).onclick=()=>this.go("home");
   },
@@ -262,6 +268,11 @@ const App = {
       <div class="row" style="margin-top:.8rem"><input class="input" id="pNew" placeholder="New player name" maxlength="24" style="flex:1"><button class="btn primary" id="pAdd">Add</button></div>
       <div class="divider"></div>
       <div class="row between"><div class="row"><button class="btn sm ghost" id="pExport">Export data</button><button class="btn sm ghost" id="pImport">Import</button><input type="file" id="pFile" accept="application/json" hidden></div><label class="toggle ${Sfx.on?"on":""}" id="sfxT"><span class="sw"></span><span class="small">Sound</span></label></div>
+      <div class="divider"></div>
+      <div class="eyebrow" style="margin-bottom:.4rem">Reset unit progress</div>
+      <p class="small muted" style="margin-bottom:.5rem">Clears that unit's accuracy, time, badges, gates and Golden honours for <b>${esc(cur||"this player")}</b> so it can be earned fresh. Study Room, artifacts, course accolades and leaderboard scores are kept.</p>
+      <div class="row">${[1,2,3,4].map(u=>`<button class="btn sm danger rsu" data-u="${u}" ${cur?"":"disabled"}>${esc(UNITS[u].short)}</button>`).join("")}</div>
+      <div class="row between" style="margin-top:.8rem"><span class="small muted">Agora v${APP_VERSION}</span><button class="btn sm" id="pUpdate"><svg class="ic"><use href="#ic-download"/></svg> Check for updates</button></div>
       ${first?"":`<div class="row" style="margin-top:.8rem;justify-content:flex-end"><button class="btn ghost" id="pClose">Close</button></div>`}`,{sticky:first});
     const refresh=()=>{ closeModal(); this.refreshProfileChip(); this.profileModal(false); };
     $$("#plist button[data-n]:not(.del)",b).forEach(x=>x.onclick=()=>{ Profile.select(x.dataset.n); closeModal(); this.refreshProfileChip(); toast("Playing as "+x.dataset.n,"","ic-user"); if(first) this.go("home"); });
@@ -272,6 +283,8 @@ const App = {
     $("#sfxT",b).onclick=()=>{ Sfx.on=!Sfx.on; LS.set("sfx",Sfx.on); $("#sfxT",b).classList.toggle("on",Sfx.on); };
     $("#pExport",b).onclick=()=>{ const data={}; LS.keys().forEach(k=>data[k]=LS.get(k)); const blob=new Blob([JSON.stringify(data)],{type:"application/json"}); const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="agora-data-"+todayISO()+".json"; a.click(); };
     $("#pImport",b).onclick=()=>$("#pFile",b).click();
+    $("#pUpdate",b).onclick=()=>this.checkUpdate(true);
+    $$(".rsu",b).forEach(x=>x.onclick=()=>{ const u=+x.dataset.u; const c=modal(`<h3>Reset ${esc(UNITS[u].short)} for ${esc(cur)}?</h3><p class="muted" style="margin:.5rem 0 1rem">Unit accuracy, play time, the six ${esc(UNITS[u].short)} badges, its gates and any Golden honours will be cleared. This can't be undone.</p><div class="row"><button class="btn danger" id="y">Reset unit</button><button class="btn ghost" id="n">Cancel</button></div>`); $("#y",c).onclick=()=>{ resetUnit(Profile.current(),u); closeModal(); toast(UNITS[u].short+" reset","Fresh start for this unit","ic-badge"); this.profileModal(false); }; $("#n",c).onclick=()=>{ closeModal(); this.profileModal(false); }; });
     $("#pFile",b).onchange=e=>{ const f=e.target.files[0]; if(!f) return; f.text().then(t=>{ try{ const d=JSON.parse(t); Object.keys(d).forEach(k=>LS.set(k,d[k])); toast("Data imported","Profiles, scores and progress restored"); refresh(); }catch(err){ toast("Import failed","That file isn't an Agora export"); } }); };
   },
 
@@ -301,6 +314,28 @@ const App = {
     if(/Android/.test(ua)) return /SamsungBrowser/.test(ua)?"samsung":/Firefox/.test(ua)?"android-firefox":"android";
     if(/Firefox/.test(ua)) return "desktop-firefox"; if(/Safari/.test(ua)&&!/Chrome|Chromium|Edg/.test(ua)) return "mac-safari";
     return "desktop";
+  },
+  /* ── updates: compare version.json on the server with the running build ── */
+  async checkUpdate(manual){
+    if(!navigator.onLine){ if(manual) toast("You're offline","Connect to the internet to check for updates","ic-download"); return; }
+    try{
+      const r=await fetch("version.json?t="+Date.now(),{cache:"no-store"}); if(!r.ok) throw 0; const v=await r.json();
+      if(this.newer(v.version,APP_VERSION)){ this.showUpdateBanner(v); }
+      else if(manual) toast("You're up to date","Agora v"+APP_VERSION,"ic-download");
+    }catch(e){ if(manual) toast("Couldn't check","Try again in a moment","ic-download"); }
+  },
+  newer(a,b){ const pa=String(a).split(".").map(Number), pb=String(b).split(".").map(Number); for(let i=0;i<3;i++){ if((pa[i]||0)>(pb[i]||0)) return true; if((pa[i]||0)<(pb[i]||0)) return false; } return false; },
+  showUpdateBanner(v){
+    if($("#updateBanner")) return;
+    const el=document.createElement("div"); el.className="update-banner"; el.id="updateBanner";
+    el.innerHTML=`<svg class="ic" style="color:var(--accent)"><use href="#ic-download"/></svg><div><b>Update available · v${esc(v.version)}</b><span>${esc(v.notes||"Your scores, badges, artifacts and progress all stay.")}</span></div><button class="btn sm primary" id="doUpdate">Update</button><button class="icon-btn sm" id="dismissUpdate" title="Later">✕</button>`;
+    document.body.appendChild(el);
+    $("#doUpdate",el).onclick=()=>this.applyUpdate(); $("#dismissUpdate",el).onclick=()=>el.remove();
+  },
+  async applyUpdate(){
+    toast("Updating…","Fetching the new version","ic-download");
+    try{ if("serviceWorker" in navigator){ const regs=await navigator.serviceWorker.getRegistrations(); for(const r of regs){ await r.unregister(); } } if(window.caches){ const ks=await caches.keys(); await Promise.all(ks.map(k=>caches.delete(k))); } }catch(e){}
+    setTimeout(()=>location.reload(),300); // localStorage (profiles, scores, badges) is untouched
   },
   async install(){
     if(this.deferredInstall){ try{ this.deferredInstall.prompt(); const r=await this.deferredInstall.userChoice; this.deferredInstall=null; if(r&&r.outcome==="accepted") return; }catch(e){} }

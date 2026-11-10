@@ -3,6 +3,7 @@
    profiles, leaderboard, badges & accolades, UI helpers
    ═══════════════════════════════════════════════════════════ */
 'use strict';
+const APP_VERSION="1.4.0";
 
 const UNITS = {
   1:{n:1,title:"Foundations of Philosophy",short:"Foundations",tag:"Columns & gold — where the questions begin.",lessons:["What Is Philosophy?","Branches of Philosophy","History of Philosophy","Missing Voices","Philosophical Reasoning","Logical Fallacies"],badgeName:"Column"},
@@ -65,7 +66,7 @@ const Profile = {
   get(name){
     const p=LS.get("p."+name,null);
     if(p) return p;
-    return {name,created:todayISO(),stats:{games:0,answered:0,correct:0,fast:0,bestStreak:0,byGame:{},byUnit:{},examGold:0},badges:{},accolades:{},seen:{},study:{},studyTime:{}};
+    return {name,created:todayISO(),stats:{games:0,answered:0,correct:0,fast:0,bestStreak:0,byGame:{},byUnit:{},examGold:0},badges:{},accolades:{},seen:{},study:{},studyTime:{},phil:{},artifacts:{}};
   },
   save(p){ LS.set("p."+p.name,p); const all=this.all(); if(!all.includes(p.name)){all.push(p.name);LS.set("profiles",all);} },
   select(name){ LS.set("profile",name); const p=this.get(name); this.save(p); },
@@ -175,9 +176,11 @@ const ACCOLADE_DEFS = [
   {id:"marathon",name:"Marathon",desc:"Answer 250 questions in total",test:p=>p.stats.answered>=250},
   {id:"rival",name:"Rivalry",desc:"Win a head-to-head game",test:p=>!!p.stats.h2hwin},
   {id:"cycle",name:"Full Cycle",desc:"Exhaust an entire question pool",test:p=>!!p.stats.cycle},
+  {id:"curator",name:"Curator",desc:"Collect 10 philosopher artifacts",test:p=>Object.keys(p.artifacts||{}).length>=10},
+  {id:"archivist",name:"Archivist",desc:"Collect every philosopher artifact",test:p=>(window.ARTIFACTS||[]).length>0&&(window.ARTIFACTS||[]).every(a=>(p.artifacts||{})[a.id])},
   {id:"librarian",name:"Librarian",desc:"Study every lesson of every unit in the Study Room",test:p=>[1,2,3,4].every(u=>unitStudyDone(p,u))},
-  {id:"laureate",name:"I think, therefore I am… a Philosopher",desc:"The ultimate honour: every accolade, every badge in every unit, every Golden honour, and Valedictorian",ultimate:true,
-   test:p=>ACCOLADE_DEFS.filter(a=>a.id!=="laureate").every(a=>p.accolades[a.id])&&[1,2,3,4].every(u=>BADGE_DEFS.every(b=>p.badges[u+":"+b.id]))&&!!p.accolades.valedictorian}
+  {id:"laureate",name:"I think, therefore I am… a Philosopher",desc:"The ultimate honour: every accolade, every badge in every unit, every Golden honour, Exam Exemption, and Valedictorian",ultimate:true,
+   test:p=>ACCOLADE_DEFS.filter(a=>a.id!=="laureate").every(a=>p.accolades[a.id])&&[1,2,3,4].every(u=>BADGE_DEFS.every(b=>p.badges[u+":"+b.id]))&&!!p.accolades.valedictorian&&!!p.accolades.exam_exempt}
 ];
 
 /* ── per-unit lifetime record helper ── */
@@ -192,21 +195,35 @@ function pct(c,a){ return a?c/a:0; }
 const GATE_DEFS=[
   {id:"sentinel",name:"Sentinel",desc:"Play this unit on 10 different days",test:(p,u)=>BU(p,u).days.length>=10,prog:(p,u)=>[Math.min(10,BU(p,u).days.length),10]},
   {id:"ironclad",name:"Ironclad",desc:"90%+ in a Level 4 game of 20+ questions, in each of the four games",test:(p,u)=>Object.keys(GAMES).every(g=>(BU(p,u).gameL4[g]?.best20||0)>=.9),prog:(p,u)=>[Object.keys(GAMES).filter(g=>(BU(p,u).gameL4[g]?.best20||0)>=.9).length,4]},
-  {id:"cartographer",name:"Cartographer",desc:"See every question in the unit and hold 85%+ lifetime accuracy in every topic",test:(p,u)=>unitSeen(p,u)>=unitTotal(u)&&TOPICS.every(t=>{const n=unitTopicCount(u,t); if(!n) return true; const r=BU(p,u).topics[t]||{a:0,c:0}; return r.a>=Math.min(20,n*2)&&pct(r.c,r.a)>=.85;}),prog:(p,u)=>[TOPICS.filter(t=>{const n=unitTopicCount(u,t); if(!n) return false; const r=BU(p,u).topics[t]||{a:0,c:0}; return r.a>=Math.min(20,n*2)&&pct(r.c,r.a)>=.85;}).length+(unitSeen(p,u)>=unitTotal(u)?1:0),TOPICS.filter(t=>unitTopicCount(u,t)).length+1]}
+  {id:"cartographer",name:"Cartographer",desc:"See every question in the unit and hold 85%+ accuracy in every topic of this unit",test:(p,u)=>unitSeen(p,u)>=unitTotal(u)&&TOPICS.every(t=>{const n=unitTopicCount(u,t); if(!n) return true; const r=BU(p,u).topics[t]||{a:0,c:0}; return r.a>=Math.min(20,n*2)&&pct(r.c,r.a)>=.85;}),prog:(p,u)=>[TOPICS.filter(t=>{const n=unitTopicCount(u,t); if(!n) return false; const r=BU(p,u).topics[t]||{a:0,c:0}; return r.a>=Math.min(20,n*2)&&pct(r.c,r.a)>=.85;}).length+(unitSeen(p,u)>=unitTotal(u)?1:0),TOPICS.filter(t=>unitTopicCount(u,t)).length+1]}
 ];
+function unitAcc(p,u){ const b=BU(p,u); return {a:b.a,c:b.c,pct:b.a?b.c/b.a:0}; }
+/* Course average = equal-weighted mean of the four unit accuracies (each unit needs EXAM_MIN answers to count) */
+const EXAM_MIN=200;
+function courseAvg(p){ const us=[1,2,3,4].map(u=>unitAcc(p,u)); const ready=us.every(x=>x.a>=EXAM_MIN); const avg=us.reduce((t,x)=>t+x.pct,0)/4; return {avg,ready,units:us}; }
+/* Reset one unit's game progress: stats, badges, gates, Golden honours and "seen" counts for that unit.
+   Study Room completion, artifacts, course accolades and leaderboard scores are left alone. */
+function resetUnit(p,u){
+  delete p.stats.byUnit[u];
+  Object.keys(p.badges).forEach(k=>{ if(k.startsWith(u+":")) delete p.badges[k]; });
+  Object.keys(p.accolades).forEach(k=>{ if(k.startsWith("gate:"+u+":")||k.startsWith("gold:"+u+":")) delete p.accolades[k]; });
+  BANK.forEach(q=>{ if(q.u===u) delete p.seen[q.id]; });
+  delete p.accolades.valedictorian; delete p.accolades.exam_exempt; delete p.accolades.laureate;
+  Profile.save(p);
+}
 function gatesOpen(p,u){ return GATE_DEFS.every(g=>p.accolades["gate:"+u+":"+g.id]); }
 
 /* ── Golden tier (hidden until the gates open) ── */
 function lessonsSeenTwice(p,u){ const m=lessonIds(u); return Object.keys(m).every(l=>m[l].every(id=>(p.seen[id]||0)>=2)); }
 function timeOK(p,u){ return BU(p,u).time>=unitHours(u); }
 const GOLD_DEFS=[
-  {id:"check",name:"Golden Checkmark",desc:"97%+ lifetime accuracy (400+ answered), 95%+ at Level 4 (80+), a 40-answer streak, every lesson seen twice, and an hour of active play per lesson",
-   test:(p,u)=>{const b=BU(p,u); return timeOK(p,u)&&lessonsSeenTwice(p,u)&&b.a>=400&&pct(b.c,b.a)>=.97&&b.l4a>=80&&pct(b.l4c,b.l4a)>=.95&&b.bestStreak>=40;},
-   prog:(p,u)=>{const b=BU(p,u); return [[timeOK(p,u),lessonsSeenTwice(p,u),b.a>=400&&pct(b.c,b.a)>=.97,b.l4a>=80&&pct(b.l4c,b.l4a)>=.95,b.bestStreak>=40].filter(Boolean).length,5];}},
-  {id:"notebook",name:"Golden Notebook",desc:"95%+ in every lesson (20+ each), three full cycles of the unit pool, 90%+ in all four games at Level 4 (25+ Qs), every question seen, and an hour of active play per lesson",
-   test:(p,u)=>{const b=BU(p,u); const m=lessonIds(u); const lessonsOK=Object.keys(m).every(l=>{const r=b.lessons[l]||{a:0,c:0}; return r.a>=Math.min(20,m[l].length*2)&&pct(r.c,r.a)>=.95;}); const gamesOK=Object.keys(GAMES).every(g=>(b.gameL4[g]?.best25||0)>=.9); return timeOK(p,u)&&lessonsOK&&b.cycles>=3&&gamesOK&&unitSeen(p,u)>=unitTotal(u);},
-   prog:(p,u)=>{const b=BU(p,u); const m=lessonIds(u); const lessonsOK=Object.keys(m).every(l=>{const r=b.lessons[l]||{a:0,c:0}; return r.a>=Math.min(20,m[l].length*2)&&pct(r.c,r.a)>=.95;}); const gamesOK=Object.keys(GAMES).every(g=>(b.gameL4[g]?.best25||0)>=.9); return [[timeOK(p,u),lessonsOK,b.cycles>=3,gamesOK,unitSeen(p,u)>=unitTotal(u)].filter(Boolean).length,5];}},
-  {id:"review",name:"Golden Test Review",desc:"Ten consecutive timed (15s or faster) Level 3+ games of 20+ questions at 95%+, averaging under 8s per answer; three timed Level 4 All-Units games of 20+ at 95%+; and an hour of active play per lesson",
+  {id:"check",name:"Golden Checkmark",desc:"93%+ accuracy in this unit (400+ answered), 93%+ at Level 4 (80+), a 40-answer streak, every lesson seen twice, and an hour of active play per lesson",
+   test:(p,u)=>{const b=BU(p,u); return timeOK(p,u)&&lessonsSeenTwice(p,u)&&b.a>=400&&pct(b.c,b.a)>=.93&&b.l4a>=80&&pct(b.l4c,b.l4a)>=.93&&b.bestStreak>=40;},
+   prog:(p,u)=>{const b=BU(p,u); return [[timeOK(p,u),lessonsSeenTwice(p,u),b.a>=400&&pct(b.c,b.a)>=.93,b.l4a>=80&&pct(b.l4c,b.l4a)>=.93,b.bestStreak>=40].filter(Boolean).length,5];}},
+  {id:"notebook",name:"Golden Notebook",desc:"93%+ in every lesson (20+ each), three full cycles of the unit pool, 90%+ in all four games at Level 4 (25+ Qs), every question seen, and an hour of active play per lesson",
+   test:(p,u)=>{const b=BU(p,u); const m=lessonIds(u); const lessonsOK=Object.keys(m).every(l=>{const r=b.lessons[l]||{a:0,c:0}; return r.a>=Math.min(20,m[l].length*2)&&pct(r.c,r.a)>=.93;}); const gamesOK=Object.keys(GAMES).every(g=>(b.gameL4[g]?.best25||0)>=.9); return timeOK(p,u)&&lessonsOK&&b.cycles>=3&&gamesOK&&unitSeen(p,u)>=unitTotal(u);},
+   prog:(p,u)=>{const b=BU(p,u); const m=lessonIds(u); const lessonsOK=Object.keys(m).every(l=>{const r=b.lessons[l]||{a:0,c:0}; return r.a>=Math.min(20,m[l].length*2)&&pct(r.c,r.a)>=.93;}); const gamesOK=Object.keys(GAMES).every(g=>(b.gameL4[g]?.best25||0)>=.9); return [[timeOK(p,u),lessonsOK,b.cycles>=3,gamesOK,unitSeen(p,u)>=unitTotal(u)].filter(Boolean).length,5];}},
+  {id:"review",name:"Golden Test Review",desc:"Ten consecutive timed (15s or faster) Level 3+ games of 20+ questions at 93%+, averaging under 8s per answer; three timed Level 4 All-Units games of 20+ at 93%+; and an hour of active play per lesson",
    test:(p,u)=>{const b=BU(p,u); return timeOK(p,u)&&!!b.trDone&&(p.stats.examGold||0)>=3;},
    prog:(p,u)=>{const b=BU(p,u); return [[timeOK(p,u),!!b.trDone,(p.stats.examGold||0)>=3].filter(Boolean).length,3];}}
 ];
@@ -239,6 +256,9 @@ function recordGame(p,res){
   if(res.h2hWin) s.h2hwin=true;
   if(res.recycled) s.cycle=true;
   (res.seen||[]).forEach(id=>p.seen[id]=(p.seen[id]||0)+1);
+  // philosopher artifacts: count correct answers per thinker
+  p.phil=p.phil||{}; p.artifacts=p.artifacts||{};
+  (res.correctIds||[]).forEach(id=>{ const q=BANK[+id.slice(1)]; if(!q) return; (window.ARTIFACTS||[]).forEach(a=>{ if(a.m.test(q.q+" "+q.a)) p.phil[a.id]=(p.phil[a.id]||0)+1; }); });
   // ── lifetime per-unit detail, credited to the unit each question belongs to (so All-Units play counts too) ──
   const today=todayISO(); const per=res.perUnit||{};
   Object.keys(per).forEach(k=>{ const un=+k, sh=per[k], b=BU(p,un); if(!b.days.includes(today)) b.days.push(today);
@@ -251,12 +271,13 @@ function recordGame(p,res){
     if(res.cycle) bu.cycles++;
     // Golden Test Review run: timed ≤15s, L3+, 20+ Qs; 95%+ continues the run, a miss resets it
     if(res.timed&&(res.timeSec||99)<=15&&res.answered>=20&&(res.diff===3||res.diff===4)){
-      if(pc>=.95){ bu.trRun++; bu.trSum+=res.avgTime||0; bu.trN++; bu.trBest=Math.max(bu.trBest,bu.trRun); if(bu.trRun>=10&&(bu.trSum/bu.trN)<8) bu.trDone=true; }
+      if(pc>=.93){ bu.trRun++; bu.trSum+=res.avgTime||0; bu.trN++; bu.trBest=Math.max(bu.trBest,bu.trRun); if(bu.trRun>=10&&(bu.trSum/bu.trN)<8) bu.trDone=true; }
       else { bu.trRun=0; bu.trSum=0; bu.trN=0; }
     }
-  } else if(res.timed&&res.diff===4&&res.answered>=20&&pc>=.95){ s.examGold=(s.examGold||0)+1; }
+  } else if(res.timed&&res.diff===4&&res.answered>=20&&pc>=.93){ s.examGold=(s.examGold||0)+1; }
   // ── unlocks ──
   const unlocked=[];
+  (window.ARTIFACTS||[]).forEach(a=>{ if(!p.artifacts[a.id]&&(p.phil[a.id]||0)>=a.need){ p.artifacts[a.id]=todayISO(); unlocked.push({type:"artifact",def:a}); } });
   [1,2,3,4].forEach(un=>{ BADGE_DEFS.forEach(b=>{ const k=un+":"+b.id; if(!p.badges[k]&&b.test(p,un)){ p.badges[k]=todayISO(); unlocked.push({type:"badge",unit:un,def:b}); } }); });
   for(let pass=0;pass<2;pass++){
     ACCOLADE_DEFS.forEach(a=>{ if(!p.accolades[a.id]&&a.test(p)){ p.accolades[a.id]=todayISO(); unlocked.push({type:"accolade",def:a}); } });
@@ -265,6 +286,7 @@ function recordGame(p,res){
       if(gatesOpen(p,un)) GOLD_DEFS.forEach(g=>{ const k="gold:"+un+":"+g.id; if(!p.accolades[k]&&g.test(p,un)){ const d=todayISO(); p.accolades[k]={date:d,seal:sealCode(p.name,un,g.id,d)}; unlocked.push({type:"gold",unit:un,def:g}); } });
     });
     if(p.accolades.laureate&&typeof p.accolades.laureate==="string"){ const d=p.accolades.laureate; p.accolades.laureate={date:d,seal:sealCode(p.name,0,"cogito",d)}; }
+    if(!p.accolades.exam_exempt){ const ca=courseAvg(p); if(ca.ready&&ca.avg>=.93){ const d=todayISO(); p.accolades.exam_exempt={date:d,seal:sealCode(p.name,0,"exam",d),avg:Math.round(ca.avg*1000)/10}; unlocked.push({type:"gold",unit:0,def:{id:"exam_exempt",name:"Exam Exemption",desc:"93%+ average across all four units"}}); } }
     if(!p.accolades.valedictorian&&allGold(p)){ const d=todayISO(); p.accolades.valedictorian={date:d,seal:sealCode(p.name,0,"valedictorian",d)}; unlocked.push({type:"gold",unit:0,def:{id:"valedictorian",name:"Valedictorian",desc:"Every Golden honour in every unit"}}); }
   }
   Profile.save(p);

@@ -1,4 +1,4 @@
-# Agora — HZT4U Review Arena  (v1.2.2 — Study Room, Gates, Golden tier, ultimate honour, install guide)
+# Agora — HZT4U Review Arena  (v1.4.0 — per-unit accuracy, unit reset, Exam Exemption)
 
 A classroom review game for HZT4U (Philosophy: Questions & Theories). Four games, four units, 700 questions written
 only from the course slide decks. Works in any browser, installs as an app on phones/tablets/laptops, and runs offline
@@ -64,17 +64,41 @@ in `lessons.js` — regenerate it from updated decks rather than editing by hand
 ### Gates and the Golden tier
 Each unit has three visible **gates** (Sentinel · Ironclad · Cartographer). Opening all three reveals that unit's hidden
 Golden tier — **Golden Checkmark**, **Golden Notebook**, **Golden Test Review** — which require very high accuracy at
-Level 4, three full cycles of the pool, exam-condition timed runs, and an hour of *active* play per lesson (time counts only
+Level 4 (93%+ where accuracy is required), three full cycles of the pool, exam-condition timed runs, and an hour of *active* play per lesson (time counts only
 while a question is on screen, capped at 90 s per answer). Earning every Golden honour in every unit unlocks **Valedictorian**.
 Each Golden unlock shows a **seal code** (derived from the player's name, unit, honour and date) so you can verify it on
 their device or in their exported data. The thresholds live in `GATE_DEFS` and `GOLD_DEFS` in `core.js`.
+
+### Per-unit accuracy, Exam Exemption and unit reset (v1.4.0)
+- Every accuracy requirement for a unit's gates and Golden honours is measured on **that unit's own record** (correct ÷
+  answered in that unit), never the lifetime total. The badges page shows each unit's accuracy in its card header and in
+  the Golden progress lines.
+- **Exam Exemption** — the badges page opens with a course card showing the **average of the four unit accuracies**. Once
+  every unit has 200+ answers and the average is 93% or better, the Exam Exemption honour unlocks with its own seal code
+  (unit 0 in the seal). The ultimate "I think, therefore I am… a Philosopher" honour now also requires it.
+- **Reset unit progress** — Profile → *Reset unit progress* clears one unit for the current player (accuracy, active time,
+  badges, gates, Golden honours, seen questions for that unit; Valedictorian/Exam Exemption/Philosopher are re-evaluated).
+  Study Room progress, artifacts, course accolades and leaderboard scores are kept. Use it when a student wants a fresh run
+  at a unit's percentage.
+
+### Artifacts
+Each philosopher in the question bank has a relic (`artifacts.js`): answer the required number of questions about them
+correctly (3–5, scaled to how often they appear) and it appears under **Artifacts** on the badges page. *Curator* (10
+artifacts) and *Archivist* (all of them) are the matching accolades.
+
+### Releasing an update
+Installed copies check `version.json` on launch and when they come back online, and show an **Update** banner if the
+version there is newer than the one they're running (there's also *Check for updates* in the profile/settings dialog).
+To ship a release: 1) bump `APP_VERSION` at the top of `core.js`, 2) bump `VERSION` in `sw.js`, 3) put the same number in
+`version.json` (with a one-line note), 4) push. Updating never touches profiles, scores, badges, artifacts or progress —
+those live in the browser's storage, not in the cached files.
 
 ### Badges & accolades
 - **Badges** are per unit and carry that unit's colour and emblem (Column · Lantern · Constellation · Scales):
   Initiate, Scholar (70%+), Sage (70%+ at Level 4), Grand Master (all four games), Completionist (seen every question),
   Swift Mind (10 fast correct answers in a timed game).
 - **Accolades** are cross-unit achievements (First Steps, Flawless, Hot Streak, Philosopher King, Wheel Wizard,
-  Double Down, Lightning Rod, Exam Ready, Purist, Speed Demon, Polymath, Marathon, Rivalry, Full Cycle, Librarian) — and the ultimate honour, **"I think, therefore I am… a Philosopher"**, which requires every accolade, every badge in every unit, every Golden honour and Valedictorian, and shows a laurel-wreath seal card atop the badges page.
+  Double Down, Lightning Rod, Exam Ready, Purist, Speed Demon, Polymath, Marathon, Rivalry, Full Cycle, Librarian) — and the ultimate honour, **"I think, therefore I am… a Philosopher"**, which requires every accolade, every badge in every unit, every Golden honour, Valedictorian and Exam Exemption, and shows a laurel-wreath seal card atop the badges page.
 - The **Leaderboard** (trophy icon) records top scores with names, filterable by game and unit.
 - Profiles, scores and progress live in the browser on each device. Use **Profile → Export data** to back up or move
   a class tablet's data; **Import** restores it.

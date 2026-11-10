@@ -252,7 +252,7 @@ input,select{font:inherit;color:inherit}
 .buzz{padding:1.6rem .5rem;border-radius:14px;font-family:var(--serif);font-size:1.5rem;font-weight:700;color:#0d0b10;transition:.1s;box-shadow:0 10px 30px -14px rgba(0,0,0,.8)}
 .buzz:active{transform:scale(.97)}
 .buzz:disabled{filter:grayscale(.7);opacity:.4}
-.locked{font-family:var(--serif);font-size:1.4rem;text-align:center;margin-top:.8rem}
+.buzz-msg{font-family:var(--serif);font-size:1.4rem;text-align:center;margin-top:.8rem}
 
 /* ── results ── */
 .results{text-align:center;padding:2rem 1rem}
@@ -420,7 +420,8 @@ table.lb{width:100%;border-collapse:collapse;font-size:.92rem}
 .cogito-title em{font-style:italic;background:linear-gradient(90deg,#ffe9a8,#ffd978,#f6e7bf);-webkit-background-clip:text;background-clip:text;color:transparent}
 .acc.ultimate{border-color:rgba(255,214,120,.5);background:linear-gradient(160deg,#1f1a12,#17161f)}
 .acc.ultimate .star{background:linear-gradient(135deg,#ffe9a8,#c9962b);color:#2a1d05;box-shadow:0 0 18px -4px rgba(255,214,120,.9)}
-.acc.ultimate b{font-family:var(--serif);font-size:1.05rem;color:#f6e7bf}
+.acc.ultimate b{font-family:var(--serif);font-size:1.55rem;line-height:1.15;color:#f6e7bf}
+.acc.ultimate{padding:1.1rem 1rem}.acc.ultimate .star{width:3.2rem;height:3.2rem;font-size:1.8rem}
 .acc.ultimate.locked{opacity:.6;filter:none}.acc.ultimate.locked .star{background:var(--ink-4);color:#8a7a52;box-shadow:none}
 .unlock.cogito-unlock{background:linear-gradient(135deg,rgba(255,226,150,.28),rgba(201,150,43,.12));border-color:#ffe29a;box-shadow:0 0 30px -8px rgba(255,214,120,.8)}
 .install-chip{border-color:rgba(var(--accent-rgb),.6);color:var(--accent-2);background:rgba(var(--accent-rgb),.1)}
@@ -429,3 +430,26 @@ table.lb{width:100%;border-collapse:collapse;font-size:.92rem}
 .install-steps li{margin:.4rem 0}
 .install-steps li::marker{color:var(--accent);font-weight:700}
 @media(max-width:700px){.topbar .install-chip span{display:inline}.topbar .install-chip{max-width:none}}
+
+/* ── Artifacts (philosopher relics) ── */
+.art-grid{display:grid;gap:.7rem;grid-template-columns:repeat(auto-fill,minmax(150px,1fr))}
+.art{display:flex;flex-direction:column;align-items:center;text-align:center;gap:.3rem;padding:.9rem .6rem;border-radius:var(--r);background:var(--ink-2);border:1px solid var(--line)}
+.art .relic{width:3.4rem;height:3.4rem;border-radius:12px;display:grid;place-items:center;font-size:1.8rem;background:rgba(var(--accent-rgb),.14);box-shadow:inset 0 0 0 1px rgba(var(--accent-rgb),.35)}
+.art b{font-family:var(--serif);font-size:1rem;line-height:1.1}
+.art span{font-size:.72rem;color:var(--paper-dim)}
+.art.locked{opacity:.45;filter:grayscale(1)}
+.art .prog{width:100%;height:.25rem;border-radius:99px;background:var(--ink-4);overflow:hidden}.art .prog i{display:block;height:100%;background:var(--accent)}
+/* ── update banner ── */
+.update-banner{position:fixed;left:50%;top:calc(4.2rem + env(safe-area-inset-top,0px));transform:translateX(-50%);z-index:55;width:min(94vw,30rem);background:linear-gradient(135deg,rgba(var(--accent-rgb),.25),var(--ink-3));border:1px solid var(--accent);border-radius:12px;padding:.7rem .9rem;display:flex;gap:.7rem;align-items:center;box-shadow:var(--shadow);animation:pop .4s cubic-bezier(.2,1.4,.4,1)}
+.update-banner>div{flex:1;min-width:0}.update-banner b{display:block;font-size:.9rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.update-banner span{font-size:.78rem;color:var(--paper-dim);display:block}
+.update-banner .btn{flex:none}.update-banner .icon-btn{flex:none}
+
+/* ── per-unit accuracy & exam exemption ── */
+.exam-card.earned{border-color:rgba(255,214,120,.5);background:linear-gradient(160deg,#1f1a12,#17161f)}
+.big-pct{font-family:var(--serif);font-size:2.4rem;font-weight:700;color:var(--accent);line-height:1}
+.exam-card.earned .big-pct{color:#ffd978}
+.unit-accs{display:grid;gap:.6rem;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));margin-top:.9rem}
+.uacc{padding:.6rem .7rem;border-radius:10px;background:var(--ink-2);border:1px solid var(--line)}
+.uacc b{display:block;font-family:var(--serif);font-size:1.5rem;color:var(--accent);line-height:1.1}
+.uacc span{font-size:.72rem;color:var(--paper-dim)}
+.uacc .prog{height:.25rem;border-radius:99px;background:var(--ink-4);overflow:hidden;margin-top:.35rem}.uacc .prog i{display:block;height:100%;background:var(--accent)}
